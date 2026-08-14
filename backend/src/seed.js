@@ -169,13 +169,17 @@ const seedDatabase = async () => {
     await StockBalance.findOrCreate({ where: { productId: prod.id, locationId: locB.id }, defaults: { productId: prod.id, locationId: locB.id, quantity: Math.floor(prod.quantity / 3), availableQuantity: Math.floor(prod.quantity / 3), reservedQuantity: 0 } });
   }
 
-  // STOCK MOVEMENTS
+  // STOCK MOVEMENTS (Legacy - updated to use new schema)
+  // Note: In Phase 3, these are replaced by proper stock in/out operations via seedPhase2.js
   const movements = [
-    { type: 'purchase', quantity: 10, referenceNo: 'PUR-001', reason: 'Initial stock', productId: createdProducts[0].id, locationId: locA.id, metadata: { supplier: supplier1.name }, createdBy: adminUser.id },
-    { type: 'issue', quantity: 3, referenceNo: 'OUT-001', reason: 'Field deployment', productId: createdProducts[1].id, locationId: locB.id, metadata: { destination: 'Field Store' }, createdBy: managerUser.id },
+    { type: 'purchase', quantity: 10, reference: 'PUR-001', reason: 'Initial stock', product_id: createdProducts[0].id, from_location_id: null, to_location_id: locA.id, purpose: 'Initial stock', metadata: { supplier: supplier1.name } },
+    { type: 'sale', quantity: 3, reference: 'OUT-001', reason: 'Field deployment', product_id: createdProducts[1].id, from_location_id: locB.id, to_location_id: null, purpose: 'Field deployment', metadata: { destination: 'Field Store' } },
   ];
   for (const m of movements) {
-    await StockMovement.findOrCreate({ where: { referenceNo: m.referenceNo }, defaults: m });
+    // Use reference to uniquely identify, but don't query using from_location_id which may not exist yet
+    await StockMovement.findOrCreate({ where: { reference: m.reference }, defaults: m }).catch(err => {
+      console.warn(`StockMovement seed warning for ${m.reference}:`, err.message);
+    });
   }
 
   // SYSTEM LOGS

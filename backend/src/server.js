@@ -2,6 +2,7 @@ const { app, server } = require('./app');
 const env = require('./config/env');
 const { sequelize } = require('./models');
 const { seedDatabase } = require('./seed');
+const { seedPhase2 } = require('./seedPhase2');
 const { execSync } = require('child_process');
 
 async function start() {
@@ -22,6 +23,9 @@ async function start() {
 
     await seedDatabase();
     console.log('Seed data initialization completed.');
+
+    await seedPhase2();
+    console.log('Phase 2 seed data initialization completed.');
 
     server.listen(env.port, () => {
       console.log(`Stock Management System API running on port ${env.port}`);

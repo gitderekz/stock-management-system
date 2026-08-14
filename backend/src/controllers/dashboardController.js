@@ -31,14 +31,14 @@ const getDashboard = async (req, res) => {
   const recentMovementsRaw = await StockMovement.findAll({
     order: [['createdAt', 'DESC']],
     limit: 5,
-    include: [{ model: User, as: 'creator', attributes: ['id', 'fullName'] }],
+    include: [{ model: User, as: 'issuer', attributes: ['id', 'fullName'] }],
   });
 
   const recentMovements = recentMovementsRaw.map((movement) => ({
     id: movement.id,
     type: movement.type,
     quantity: movement.quantity,
-    user: movement.creator?.fullName || 'System',
+    user: movement.issuer?.fullName || 'System',
     createdAt: movement.createdAt,
   }));
 

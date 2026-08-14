@@ -31,7 +31,7 @@ const LoginPage = () => {
     <div className="login-layout">
       <div className="login-card">
         <div className="login-brand">
-          <div className="brand-icon">SMS</div>
+          <img src="/uploads/logo.png" alt="Logo" className="brand-logo" onError={(e)=>{e.target.style.display='none'}} />
         </div>
         <div className="login-title">StockFlow</div>
         <div className="login-subtitle">Inventory Management System</div>

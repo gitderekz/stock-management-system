@@ -65,8 +65,9 @@ const listMovements = async (req, res) => {
     order: [['createdAt', 'DESC']],
     include: [
       { model: Product, as: 'product', attributes: ['id', 'name'] },
-      { model: Location, as: 'location', attributes: ['id', 'name'] },
-      { model: User, as: 'creator', attributes: ['id', 'fullName', 'email'] },
+      { model: Location, as: 'from_location', attributes: ['id', 'name'] },
+      { model: Location, as: 'to_location', attributes: ['id', 'name'] },
+      { model: User, as: 'issuer', attributes: ['id', 'fullName', 'email'] },
     ],
   });
 
@@ -78,8 +79,8 @@ const listMovements = async (req, res) => {
     referenceNo: movement.referenceNo,
     metadata: movement.metadata,
     product: movement.product?.name || null,
-    location: movement.location?.name || null,
-    user: movement.creator?.fullName || null,
+    location: movement.from_location?.name || movement.to_location?.name || null,
+    user: movement.issuer?.fullName || null,
     createdAt: movement.createdAt,
   }));
 

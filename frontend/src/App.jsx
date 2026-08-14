@@ -21,13 +21,17 @@ import CategoriesPage from './pages/CategoriesPage.jsx';
 import BrandsPage from './pages/BrandsPage.jsx';
 import SuppliersPage from './pages/SuppliersPage.jsx';
 import LocationsPage from './pages/LocationsPage.jsx';
-import { StockInPage, StockOutPage, StockTransferPage, DamagedPage, ReturnsPage, StockMovementsPage } from './pages/StockPages.jsx';
+import PurchaseOrdersPage from './pages/PurchaseOrdersPage.jsx';
+import StockInPage from './pages/StockInPage.jsx';
+import StockOutPage from './pages/StockOutPage.jsx';
+import { StockTransferPage, DamagedPage, ReturnsPage, StockMovementsPage } from './pages/StockPages.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
 import UsersPage from './pages/UsersRolesPage.jsx';
 import RolesPage from './pages/RolesPage.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import SystemLogsPage from './pages/SystemLogsPage.jsx';
+import BatchTrackingPage from './pages/BatchTrackingPage.jsx';
 
 // Dashboard Component with Stats
 const StatCard = ({ title, value, delta, trend }) => (
@@ -279,6 +283,7 @@ const Sidebar = ({ user, onLogout }) => {
     {
       label: 'Stock Operations',
       items: [
+        { label: 'Purchase Orders', path: '/purchase-orders', icon: ShoppingCart },
         { label: 'Stock In', path: '/stock/in', icon: ShoppingCart },
         { label: 'Stock Out', path: '/stock/out', icon: LogOut },
         { label: 'Transfers', path: '/stock/transfers', icon: ArrowLeftRight },
@@ -298,6 +303,7 @@ const Sidebar = ({ user, onLogout }) => {
       label: 'Analytics',
       items: [
         { label: 'Reports', path: '/reports', icon: BarChart3 },
+        { label: 'Batch Tracking', path: '/batches', icon: Layers },
         { label: 'Logs', path: '/system-logs', icon: FileText },
       ]
     },
@@ -316,7 +322,9 @@ const Sidebar = ({ user, onLogout }) => {
     <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
       <div className="sidebar-header">
         <div className="brand">
-          <div className="brand-icon">SMS</div>
+          <div className="brand-icon">
+            <img src="/uploads/logo.png" alt="Logo" className="sidebar-logo" onError={(e)=>{e.target.style.display='none'}} />
+          </div>
           {sidebarOpen && (
             <div>
               <div className="brand-title">StockFlow</div>
@@ -527,6 +535,7 @@ const App = () => {
         <Route path="/brands" element={<MainLayout pageTitle="Brands" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><BrandsPage /></MainLayout>} />
         <Route path="/suppliers" element={<MainLayout pageTitle="Suppliers" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><SuppliersPage /></MainLayout>} />
         <Route path="/locations" element={<MainLayout pageTitle="Locations/Warehouses" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><LocationsPage /></MainLayout>} />
+        <Route path="/purchase-orders" element={<MainLayout pageTitle="Purchase Orders" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><PurchaseOrdersPage /></MainLayout>} />
         <Route path="/stock/in" element={<MainLayout pageTitle="Stock In" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><StockInPage /></MainLayout>} />
         <Route path="/stock/out" element={<MainLayout pageTitle="Stock Out" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><StockOutPage /></MainLayout>} />
         <Route path="/stock/transfers" element={<MainLayout pageTitle="Stock Transfers" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><StockTransferPage /></MainLayout>} />
@@ -534,6 +543,7 @@ const App = () => {
         <Route path="/stock/returns" element={<MainLayout pageTitle="Stock Returns" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><ReturnsPage /></MainLayout>} />
         <Route path="/stock/movements" element={<MainLayout pageTitle="Stock Movements" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><StockMovementsPage /></MainLayout>} />
         <Route path="/reports" element={<MainLayout pageTitle="Reports" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><ReportsPage /></MainLayout>} />
+        <Route path="/batches" element={<MainLayout pageTitle="Batch Tracking" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><BatchTrackingPage /></MainLayout>} />
         <Route path="/users" element={<MainLayout pageTitle="Users & Roles" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><UsersPage /></MainLayout>} />
         <Route path="/roles" element={<MainLayout pageTitle="Roles Management" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><RolesPage /></MainLayout>} />
         <Route path="/notifications" element={<MainLayout pageTitle="Notifications" theme={theme} language={language} onThemeToggle={handleThemeToggle} onLanguageChange={handleLanguageChange} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount}><NotificationsPage /></MainLayout>} />

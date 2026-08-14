@@ -17,6 +17,10 @@ const Attachment = require('./Attachment');
 const Permission = require('./Permission');
 const RolePermission = require('./RolePermission');
 const Notification = require('./Notification');
+const StockBatch = require('./StockBatch');
+const PurchaseOrder = require('./PurchaseOrder');
+const Tax = require('./Tax');
+const Tariff = require('./Tariff');
 
 Role.hasMany(User, { foreignKey: 'roleId', as: 'users' });
 User.belongsTo(Role, { foreignKey: 'roleId', as: 'role' });
@@ -39,8 +43,8 @@ ProductImage.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 Product.hasMany(ProductVideo, { foreignKey: 'productId', as: 'videos' });
 ProductVideo.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 
-Product.hasMany(StockMovement, { foreignKey: 'productId', as: 'stockMovements' });
-StockMovement.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+Product.hasMany(StockMovement, { foreignKey: 'product_id', as: 'stockMovements' });
+StockMovement.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 
 Product.hasMany(StockBalance, { foreignKey: 'productId', as: 'balances' });
 StockBalance.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
@@ -48,14 +52,18 @@ StockBalance.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 Location.hasMany(StockBalance, { foreignKey: 'locationId', as: 'balances' });
 StockBalance.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
 
-Location.hasMany(StockMovement, { foreignKey: 'locationId', as: 'stockMovements' });
-StockMovement.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
+// StockMovement has separate from/to location fields; expose both aliases used in controllers
+StockMovement.belongsTo(Location, { foreignKey: 'from_location_id', as: 'from_location' });
+StockMovement.belongsTo(Location, { foreignKey: 'to_location_id', as: 'to_location' });
+Location.hasMany(StockMovement, { foreignKey: 'from_location_id', as: 'outgoingMovements' });
+Location.hasMany(StockMovement, { foreignKey: 'to_location_id', as: 'incomingMovements' });
 
 Product.belongsToMany(Location, { through: 'stock_balances', foreignKey: 'productId', otherKey: 'locationId' });
 Location.belongsToMany(Product, { through: 'stock_balances', foreignKey: 'locationId', otherKey: 'productId' });
 
-User.hasMany(StockMovement, { foreignKey: 'createdBy', as: 'stockMovements' });
-StockMovement.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+// StockMovement issued_by field maps to User (who performed the action)
+User.hasMany(StockMovement, { foreignKey: 'issued_by', as: 'issuedMovements' });
+StockMovement.belongsTo(User, { foreignKey: 'issued_by', as: 'issuer' });
 
 User.hasMany(SystemLog, { foreignKey: 'userId', as: 'logs' });
 SystemLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -68,6 +76,22 @@ Permission.belongsToMany(Role, { through: RolePermission, foreignKey: 'permissio
 
 Role.hasMany(RolePermission, { foreignKey: 'roleId', as: 'access' });
 Permission.hasMany(RolePermission, { foreignKey: 'permissionId', as: 'roleAssignments' });
+
+// StockBatch <-> Product/Location
+Product.hasMany(StockBatch, { foreignKey: 'product_id', as: 'batches' });
+StockBatch.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+Location.hasMany(StockBatch, { foreignKey: 'location_id', as: 'batches' });
+StockBatch.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
+
+// PurchaseOrder associations
+Supplier.hasMany(PurchaseOrder, { foreignKey: 'supplier_id', as: 'purchaseOrders' });
+PurchaseOrder.belongsTo(Supplier, { foreignKey: 'supplier_id', as: 'supplier' });
+User.hasMany(PurchaseOrder, { foreignKey: 'created_by', as: 'purchaseOrdersCreated' });
+PurchaseOrder.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+
+// Link PurchaseOrder <-> StockBatch (optional link for batches received against a PO)
+PurchaseOrder.hasMany(StockBatch, { foreignKey: 'purchase_order_id', as: 'batches' });
+StockBatch.belongsTo(PurchaseOrder, { foreignKey: 'purchase_order_id', as: 'purchaseOrder' });
 
 module.exports = {
   sequelize,
@@ -89,4 +113,8 @@ module.exports = {
   Attachment,
   Permission,
   RolePermission,
+  StockBatch,
+  PurchaseOrder,
+  Tax,
+  Tariff,
 };
