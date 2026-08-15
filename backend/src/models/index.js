@@ -19,6 +19,7 @@ const RolePermission = require('./RolePermission');
 const Notification = require('./Notification');
 const StockBatch = require('./StockBatch');
 const PurchaseOrder = require('./PurchaseOrder');
+const PurchaseOrderItem = require('./PurchaseOrderItem');
 const Tax = require('./Tax');
 const Tariff = require('./Tariff');
 
@@ -89,6 +90,14 @@ PurchaseOrder.belongsTo(Supplier, { foreignKey: 'supplier_id', as: 'supplier' })
 User.hasMany(PurchaseOrder, { foreignKey: 'created_by', as: 'purchaseOrdersCreated' });
 PurchaseOrder.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
+// PurchaseOrder <-> PurchaseOrderItem (line items on the PO)
+PurchaseOrder.hasMany(PurchaseOrderItem, { foreignKey: 'purchase_order_id', as: 'items' });
+PurchaseOrderItem.belongsTo(PurchaseOrder, { foreignKey: 'purchase_order_id', as: 'purchaseOrder' });
+
+// PurchaseOrderItem <-> Product
+Product.hasMany(PurchaseOrderItem, { foreignKey: 'product_id', as: 'purchaseOrderItems' });
+PurchaseOrderItem.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+
 // Link PurchaseOrder <-> StockBatch (optional link for batches received against a PO)
 PurchaseOrder.hasMany(StockBatch, { foreignKey: 'purchase_order_id', as: 'batches' });
 StockBatch.belongsTo(PurchaseOrder, { foreignKey: 'purchase_order_id', as: 'purchaseOrder' });
@@ -115,6 +124,7 @@ module.exports = {
   RolePermission,
   StockBatch,
   PurchaseOrder,
+  PurchaseOrderItem,
   Tax,
   Tariff,
 };

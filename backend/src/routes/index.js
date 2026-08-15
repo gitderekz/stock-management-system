@@ -69,6 +69,11 @@ router.post('/purchase-orders', protect, requirePermission('purchase_orders.mana
 router.put('/purchase-orders/:id', protect, requirePermission('purchase_orders.manage'), purchaseOrderController.updatePurchaseOrder);
 router.delete('/purchase-orders/:id', protect, requirePermission('purchase_orders.manage'), purchaseOrderController.deletePurchaseOrder);
 
+// ===== PURCHASE ORDER ITEMS (LINE ITEMS) =====
+router.post('/purchase-orders/:po_id/items', protect, requirePermission('purchase_orders.manage'), purchaseOrderController.addPurchaseOrderItem);
+router.put('/purchase-orders/items/:item_id', protect, requirePermission('purchase_orders.manage'), purchaseOrderController.updatePurchaseOrderItem);
+router.delete('/purchase-orders/items/:item_id', protect, requirePermission('purchase_orders.manage'), purchaseOrderController.deletePurchaseOrderItem);
+
 // ===== NEW STOCK IN (RECEIPT) =====
 router.get('/stock/in', protect, stockInController.listStockIn);
 router.get('/stock/in/:id', protect, stockInController.getStockIn);
