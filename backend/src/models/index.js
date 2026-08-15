@@ -78,11 +78,13 @@ Permission.belongsToMany(Role, { through: RolePermission, foreignKey: 'permissio
 Role.hasMany(RolePermission, { foreignKey: 'roleId', as: 'access' });
 Permission.hasMany(RolePermission, { foreignKey: 'permissionId', as: 'roleAssignments' });
 
-// StockBatch <-> Product/Location
+// StockBatch <-> Product/Location/User
 Product.hasMany(StockBatch, { foreignKey: 'product_id', as: 'batches' });
 StockBatch.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 Location.hasMany(StockBatch, { foreignKey: 'location_id', as: 'batches' });
 StockBatch.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
+User.hasMany(StockBatch, { foreignKey: 'received_by', as: 'batchesReceived' });
+StockBatch.belongsTo(User, { foreignKey: 'received_by', as: 'receiver' });
 
 // PurchaseOrder associations
 Supplier.hasMany(PurchaseOrder, { foreignKey: 'supplier_id', as: 'purchaseOrders' });

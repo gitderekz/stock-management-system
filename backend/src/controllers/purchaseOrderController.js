@@ -1,4 +1,4 @@
-const { PurchaseOrder, Supplier, User, StockBatch, Product, PurchaseOrderItem } = require('../models');
+const { PurchaseOrder, Supplier, User, StockBatch, Product, PurchaseOrderItem, Brand, Category } = require('../models');
 const { createLog } = require('./logsController');
 
 // Calculate landed cost per unit
@@ -51,10 +51,18 @@ const getPurchaseOrder = async (req, res) => {
       include: [
         { model: Supplier, as: 'supplier' },
         { model: User, as: 'creator', attributes: ['id', 'fullName'] },
-        { 
-          model: PurchaseOrderItem, 
-          as: 'items', 
-          include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'sku', 'brand', 'category'] }],
+        {
+          model: PurchaseOrderItem,
+          as: 'items',
+          include: [{
+            model: Product,
+            as: 'product',
+            include: [
+              { model: Brand, as: 'brand', attributes: ['id', 'name'] },
+              { model: Category, as: 'category', attributes: ['id', 'name'] },
+            ],
+            attributes: ['id', 'name', 'sku', 'price', 'quantity'],
+          }],
           separate: true,
         },
         { model: StockBatch, as: 'batches', include: [{ model: Product, as: 'product' }] },

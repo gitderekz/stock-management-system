@@ -67,18 +67,18 @@ const BatchTrackingPage = () => {
 
     // Apply age filters
     if (filters.minAge) {
-      result = result.filter((batch) => batch.age >= Number(filters.minAge));
+      result = result.filter((batch) => (batch.age || 0) >= Number(filters.minAge));
     }
     if (filters.maxAge) {
-      result = result.filter((batch) => batch.age <= Number(filters.maxAge));
+      result = result.filter((batch) => (batch.age || 0) <= Number(filters.maxAge));
     }
 
     // Apply quantity filters
     if (filters.minQuantity) {
-      result = result.filter((batch) => batch.quantity >= Number(filters.minQuantity));
+      result = result.filter((batch) => (batch.quantity || batch.quantity_remaining || 0) >= Number(filters.minQuantity));
     }
     if (filters.maxQuantity) {
-      result = result.filter((batch) => batch.quantity <= Number(filters.maxQuantity));
+      result = result.filter((batch) => (batch.quantity || batch.quantity_remaining || 0) <= Number(filters.maxQuantity));
     }
 
     // Apply sorting
@@ -97,10 +97,10 @@ const BatchTrackingPage = () => {
         sorted.sort((a, b) => b.age - a.age);
         break;
       case 'quantity_asc':
-        sorted.sort((a, b) => a.quantity - b.quantity);
+        sorted.sort((a, b) => (a.quantity || a.quantity_remaining || 0) - (b.quantity || b.quantity_remaining || 0));
         break;
       case 'quantity_desc':
-        sorted.sort((a, b) => b.quantity - a.quantity);
+        sorted.sort((a, b) => (b.quantity || b.quantity_remaining || 0) - (a.quantity || a.quantity_remaining || 0));
         break;
       default:
         break;
@@ -123,7 +123,7 @@ const BatchTrackingPage = () => {
   const stats = useMemo(() => {
     const totalBatches = batches.length;
     const totalQuantity = batches.reduce((sum, batch) => sum + (batch.quantity || 0), 0);
-    const totalValue = batches.reduce((sum, batch) => sum + (batch.unit_cost * batch.quantity || 0), 0);
+    const totalValue = batches.reduce((sum, batch) => sum + ((batch.unit_cost || 0) * (batch.quantity || 0)), 0);
     const averageAge = batches.length > 0 
       ? Math.round(batches.reduce((sum, batch) => sum + calculateBatchAge(batch.received_at), 0) / batches.length)
       : 0;

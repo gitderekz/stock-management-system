@@ -96,13 +96,20 @@ body {
 }
 
 .brand-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #28b39d, #206b86);
   display: grid;
   place-items: center;
   font-weight: 800;
+}
+
+.sidebar-logo {
+  max-height: 40px;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 8px;
 }
 
 .brand-title {

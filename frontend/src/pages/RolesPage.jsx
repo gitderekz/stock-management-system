@@ -201,7 +201,7 @@ const RolesPage = () => {
             <label className="field-label">Permissions</label>
             <div className="permissions-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginTop: '12px' }}>
               {permissions.map((permission) => (
-                <label key={permission.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '4px', backgroundColor: '#f5f5f5' }}>
+                <label key={`perm-${permission.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '4px', backgroundColor: '#f5f5f5' }}>
                   <input
                     type="checkbox"
                     checked={form.permissionIds.includes(permission.id)}

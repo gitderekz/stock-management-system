@@ -7,6 +7,14 @@ const StockBatch = sequelize.define('StockBatch', {
     primaryKey: true,
     autoIncrement: true,
   },
+  product_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
+  location_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
   batch_number: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -39,9 +47,17 @@ const StockBatch = sequelize.define('StockBatch', {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   },
+  received_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
   condition: {
     type: DataTypes.ENUM('new', 'used', 'refurbished', 'damaged'),
     defaultValue: 'new',
+  },
+  inspection_notes: {
+    type: DataTypes.TEXT,
+    allowNull: true,
   },
   notes: {
     type: DataTypes.TEXT,

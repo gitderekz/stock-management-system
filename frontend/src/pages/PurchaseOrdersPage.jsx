@@ -4,6 +4,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from '../api.js';
 import Modal from '../components/Modal.jsx';
 import { useModal } from '../hooks/useModal.js';
 import { Trash2, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const initialForm = {
   supplier_id: '',
@@ -16,6 +17,7 @@ const initialForm = {
 const PurchaseOrdersPage = () => {
   const { token } = useAuth();
   const modal = useModal();
+  const navigate = useNavigate();
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -55,6 +57,17 @@ const PurchaseOrdersPage = () => {
       setProducts(response.data || []);
     } catch (err) {
       console.warn('Could not load products:', err.message);
+    }
+  };
+
+  const loadPurchaseOrderDetails = async (poId) => {
+    try {
+      const response = await apiGet(`/purchase-orders/${poId}`, token);
+      const po = response.data || response;
+      return po;
+    } catch (err) {
+      console.warn('Could not load PO details:', err.message);
+      return null;
     }
   };
 
@@ -126,15 +139,27 @@ const PurchaseOrdersPage = () => {
     }));
   };
 
-  const openPOModal = (po = null) => {
+  const openPOModal = async (po = null) => {
     if (po) {
-      setEditing(po);
+      const detailedPO = await loadPurchaseOrderDetails(po.id);
+      const sourcePO = detailedPO || po;
+      setEditing(sourcePO);
       setForm({
-        supplier_id: po.supplier_id || '',
-        po_number: po.po_number || '',
-        expected_delivery: po.expected_delivery ? po.expected_delivery.split('T')[0] : '',
-        notes: po.notes || '',
-        items: po.items || [],
+        supplier_id: sourcePO.supplier_id || sourcePO.supplier?.id || '',
+        po_number: sourcePO.po_number || '',
+        expected_delivery: sourcePO.expected_delivery ? sourcePO.expected_delivery.split('T')[0] : '',
+        notes: sourcePO.notes || '',
+        items: (sourcePO.items || []).map((item) => ({
+          id: item.id,
+          product_id: item.product_id || item.productId || '',
+          quantity: item.quantity || 0,
+          unit_cost: item.unit_cost || 0,
+          unit_selling_price: item.unit_selling_price || 0,
+          shipping_per_unit: item.shipping_per_unit || 0,
+          tariff_per_unit: item.tariff_per_unit || 0,
+          tax_per_unit: item.tax_per_unit || 0,
+          landed_cost: item.landed_cost || 0,
+        })),
       });
     } else {
       setEditing(null);
@@ -143,6 +168,13 @@ const PurchaseOrdersPage = () => {
     setError('');
     setMessage('');
     modal.open();
+  };
+
+  const handleViewPO = async (poId) => {
+    const po = await loadPurchaseOrderDetails(poId);
+    if (po) {
+      setSelectedPO(po);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -324,7 +356,7 @@ const PurchaseOrdersPage = () => {
                   <td>
                     <button
                       className="btn btn-ghost btn-sm"
-                      onClick={() => setSelectedPO(po)}
+                      onClick={() => handleViewPO(po.id)}
                     >
                       View
                     </button>
@@ -369,7 +401,7 @@ const PurchaseOrdersPage = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', marginBottom: '20px' }}>
               <div>
                 <label style={{ fontWeight: 'bold', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Supplier</label>
-                <div style={{ marginTop: '5px', fontSize: '14px' }}>{selectedPO.supplier}</div>
+                <div style={{ marginTop: '5px', fontSize: '14px' }}>{selectedPO.supplier?.name || selectedPO.supplier || 'Unknown'}</div>
               </div>
               <div>
                 <label style={{ fontWeight: 'bold', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>PO Status</label>
@@ -416,8 +448,8 @@ const PurchaseOrdersPage = () => {
                     <td style={{ padding: '10px', textAlign: 'right' }}>TZS {Number(item.unit_cost || 0).toLocaleString()}</td>
                     <td style={{ padding: '10px', textAlign: 'right' }}>TZS {Number(item.unit_selling_price || 0).toLocaleString()}</td>
                     <td style={{ padding: '10px', textAlign: 'right' }}>TZS {Number(item.landed_cost || calculateLandedCost(item)).toLocaleString()}</td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold' }}>
-                      TZS {(item.quantity * parseFloat(item.unit_cost || 0)).toLocaleString()}
+                    <td style={{ padding: '10px', textAlign: 'right' }}>
+                      TZS {((item.quantity || 0) * parseFloat(item.unit_cost || 0)).toLocaleString()}
                     </td>
                   </tr>
                 ))}
@@ -437,10 +469,95 @@ const PurchaseOrdersPage = () => {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => setSelectedPO(null)}>
-                Close
+            <div style={{ marginBottom: '20px', borderTop: '1px solid #eee', paddingTop: '16px' }}>
+              <h4 style={{ marginBottom: '8px' }}>Update Status</h4>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666' }}>PO Status</label>
+                  <select
+                    value={selectedPO.po_status || 'DRAFT'}
+                    onChange={(event) => setSelectedPO((prev) => ({ ...prev, po_status: event.target.value }))}
+                    style={{ padding: '8px', borderRadius: '6px' }}
+                  >
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="ORDERED">ORDERED</option>
+                    <option value="PARTIALLY_RECEIVED">PARTIALLY_RECEIVED</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666' }}>Payment Status</label>
+                  <select
+                    value={selectedPO.payment_status || 'UNPAID'}
+                    onChange={(event) => setSelectedPO((prev) => ({ ...prev, payment_status: event.target.value }))}
+                    style={{ padding: '8px', borderRadius: '6px' }}
+                  >
+                    <option value="UNPAID">UNPAID</option>
+                    <option value="PARTIALLY_PAID">PARTIALLY_PAID</option>
+                    <option value="PAID">PAID</option>
+                    <option value="REFUNDED">REFUNDED</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666' }}>Delivery Status</label>
+                  <select
+                    value={selectedPO.delivery_status || 'PENDING'}
+                    onChange={(event) => setSelectedPO((prev) => ({ ...prev, delivery_status: event.target.value }))}
+                    style={{ padding: '8px', borderRadius: '6px' }}
+                  >
+                    <option value="PENDING">PENDING</option>
+                    <option value="PARTIALLY_RECEIVED">PARTIALLY_RECEIVED</option>
+                    <option value="RECEIVED">RECEIVED</option>
+                    <option value="OVERDUE">OVERDUE</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
+                <div style={{ marginLeft: 'auto' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={async () => {
+                      try {
+                        const resp = await apiPut(
+                          `/purchase-orders/${selectedPO.id}`,
+                          {
+                            po_status: selectedPO.po_status,
+                            payment_status: selectedPO.payment_status,
+                            delivery_status: selectedPO.delivery_status,
+                          },
+                          token
+                        );
+                        const updatedPO = resp.data || selectedPO;
+                        setSelectedPO(updatedPO);
+                        setPurchaseOrders((prev) => prev.map((p) => (p.id === updatedPO.id ? updatedPO : p)));
+                        setMessage('Status updated');
+                      } catch (err) {
+                        setError(err.message || 'Failed to update status');
+                      }
+                    }}
+                  >
+                    Save Status
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}>
+              <button
+                className="btn btn-info"
+                onClick={() => {
+                  modal.close();
+                  navigate(`/stock/in?po=${selectedPO.id}`);
+                }}
+              >
+                Receive Goods
               </button>
+              <div style={{ flex: 1 }} />
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost" onClick={() => setSelectedPO(null)}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </Modal>
@@ -671,7 +788,7 @@ const PurchaseOrdersPage = () => {
                           />
                         </td>
                         <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>
-                          TZS {(item.quantity * parseFloat(item.unit_cost || 0)).toLocaleString()}
+                          TZS {((item.quantity || 0) * parseFloat(item.unit_cost || 0)).toLocaleString()}
                         </td>
                         <td style={{ padding: '8px', textAlign: 'center' }}>
                           <button

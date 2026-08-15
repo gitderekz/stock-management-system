@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiGet } from '../api.js';
 
+const currency = (value) => `TZS ${Number(value || 0).toLocaleString()}`;
+const asRows = (payload) => Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+
 const ReportsPage = () => {
   const { token } = useAuth();
   const [activeReport, setActiveReport] = useState('overview');
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0],
+    startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
   });
   const [loading, setLoading] = useState(false);
@@ -44,42 +45,53 @@ const ReportsPage = () => {
         default:
           response = await apiGet('/reports', token);
       }
-      setData(response.data || {});
+
+      const payload = response?.data ?? response ?? {};
+      setData(payload);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Unable to load report');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDateChange = (e) => {
-    setDateRange({
-      ...dateRange,
-      [e.target.name]: e.target.value,
-    });
+    setDateRange((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   useEffect(() => {
     loadReport(activeReport);
-  }, [activeReport, dateRange]);
+  }, [activeReport, dateRange.startDate, dateRange.endDate]);
+
+  const overview = data?.inventory || data || {};
+  const movements = data?.movements || {};
+  const purchases = data?.purchases || {};
+
+  const renderTotalsRow = (columns, totals) => (
+    <tr style={{ fontWeight: 700, background: 'rgba(15, 23, 42, 0.06)' }}>
+      {columns.map((col) => (
+        <td key={col.key}>{totals[col.key] ?? ''}</td>
+      ))}
+    </tr>
+  );
 
   const OverviewReport = () => (
     <div className="report-grid">
       <div className="report-card">
         <div className="report-title">Total Products</div>
-        <div className="report-value">{data?.totalProducts || 0}</div>
+        <div className="report-value">{overview.totalProducts || 0}</div>
       </div>
       <div className="report-card">
         <div className="report-title">Stock Value</div>
-        <div className="report-value">TZS {(data?.totalStockValue || 0).toLocaleString()}</div>
+        <div className="report-value">{currency(overview.totalStockValue || 0)}</div>
       </div>
       <div className="report-card">
         <div className="report-title">Low Stock</div>
-        <div className="report-value" style={{ color: '#f59e0b' }}>{data?.lowStock || 0}</div>
+        <div className="report-value" style={{ color: '#f59e0b' }}>{overview.lowStock || 0}</div>
       </div>
       <div className="report-card">
         <div className="report-title">Out of Stock</div>
-        <div className="report-value" style={{ color: '#ef4444' }}>{data?.outOfStock || 0}</div>
+        <div className="report-value" style={{ color: '#ef4444' }}>{overview.outOfStock || 0}</div>
       </div>
 
       <div className="panel" style={{ gridColumn: '1 / -1' }}>
@@ -87,136 +99,251 @@ const ReportsPage = () => {
         <div className="info-grid">
           <div className="info-item">
             <label>Stock In</label>
-            <div className="text-success">{data?.stockInToday || 0} units</div>
+            <div className="text-success">{movements.stockInToday || 0} units</div>
           </div>
           <div className="info-item">
             <label>Stock Out</label>
-            <div className="text-danger">{data?.stockOutToday || 0} units</div>
+            <div className="text-danger">{movements.stockOutToday || 0} units</div>
           </div>
           <div className="info-item">
             <label>Transfers</label>
-            <div className="text-info">{data?.transfersToday || 0}</div>
+            <div className="text-info">{movements.transfersToday || 0}</div>
           </div>
           <div className="info-item">
             <label>Damaged</label>
-            <div className="text-danger">{data?.damagedToday || 0}</div>
+            <div className="text-danger">{movements.damagedToday || 0}</div>
           </div>
         </div>
       </div>
-    </div>
-  );
 
-  const ValuationReport = () => (
-    <div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Qty</th>
-            <th>Unit Cost</th>
-            <th>Total Value</th>
-            <th>Batch Aging</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(data?.valuations || []).map((val, idx) => {
-            const daysOld = val.daysInStock || 0;
-            let ageColor = '#10b981';
-            if (daysOld > 180) ageColor = '#ef4444';
-            else if (daysOld > 90) ageColor = '#f59e0b';
-            return (
+      <div className="panel" style={{ gridColumn: '1 / -1' }}>
+        <h4>Purchases by Supplier</h4>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(purchases.purchaseBySupplier || []).map((supplier, idx) => (
               <tr key={idx}>
-                <td>{val.productName}</td>
-                <td>{val.quantity}</td>
-                <td>TZS {Number(val.unitCost || 0).toLocaleString()}</td>
-                <td>TZS {Number(val.totalValue || 0).toLocaleString()}</td>
-                <td style={{ color: ageColor }}>{daysOld} days</td>
+                <td>{supplier.supplier}</td>
+                <td>{currency(supplier.value)}</td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const LowStockReport = () => (
-    <div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Current</th>
-            <th>Reorder Level</th>
-            <th>Shortage</th>
-            <th>Priority</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(data?.lowStockProducts || []).map((prod, idx) => {
-            const shortage = Math.max(0, prod.reorderLevel - prod.currentStock);
-            let priorityColor = '#3b82f6';
-            if (prod.currentStock === 0) priorityColor = '#ef4444';
-            else if (shortage > prod.reorderLevel * 0.5) priorityColor = '#f59e0b';
-            return (
-              <tr key={idx}>
-                <td>{prod.productName}</td>
-                <td>{prod.currentStock}</td>
-                <td>{prod.reorderLevel}</td>
-                <td style={{ color: '#ef4444' }}>{shortage}</td>
-                <td style={{ color: priorityColor }}>
-                  {prod.currentStock === 0 ? 'CRITICAL' : shortage > prod.reorderLevel * 0.5 ? 'HIGH' : 'MEDIUM'}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const MovementsReport = () => (
-    <div>
-      <div className="info-grid">
-        <div className="info-item">
-          <label>Total Stock In</label>
-          <div style={{ color: '#10b981', fontSize: '1.5em', fontWeight: 'bold' }}>{data?.totalStockIn || 0} units</div>
-        </div>
-        <div className="info-item">
-          <label>Total Stock Out</label>
-          <div style={{ color: '#ef4444', fontSize: '1.5em', fontWeight: 'bold' }}>{data?.totalStockOut || 0} units</div>
-        </div>
-        <div className="info-item">
-          <label>Total Transfers</label>
-          <div style={{ color: '#3b82f6', fontSize: '1.5em', fontWeight: 'bold' }}>{data?.totalTransfers || 0} units</div>
-        </div>
+            ))}
+            <tr style={{ fontWeight: 700, background: 'rgba(15, 23, 42, 0.06)' }}>
+              <td>Total</td>
+              <td>{currency(purchases.totalPurchases || 0)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
 
-  const AuditReport = () => (
-    <div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Timestamp</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Entity</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(data?.auditLogs || []).slice(0, 50).map((log, idx) => (
-            <tr key={idx}>
-              <td className="font-size-sm">{new Date(log.timestamp).toLocaleString()}</td>
-              <td>{log.user?.fullName || 'System'}</td>
-              <td><span className="badge badge-info">{log.action}</span></td>
-              <td>{log.entityType}</td>
+  const ValuationReport = () => {
+    const rows = asRows(data?.data || data?.valuations || []);
+    const columns = [
+      { key: 'product', label: 'Product' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'location', label: 'Location' },
+      { key: 'quantity', label: 'Qty' },
+      { key: 'unit_cost', label: 'Unit Cost' },
+      { key: 'total_cost', label: 'Total Value' },
+    ];
+    const totals = {
+      product: 'TOTAL',
+      quantity: rows.reduce((sum, row) => sum + Number(row.quantity || row.qty || 0), 0),
+      total_cost: rows.reduce((sum, row) => sum + Number(row.total_cost || row.totalValue || 0), 0),
+    };
+
+    return (
+      <div className="panel">
+        <table className="table">
+          <thead>
+            <tr>
+              {columns.map((col) => <th key={col.key}>{col.label}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx}>
+                <td>{row.product_name || row.productName || row.product || '—'}</td>
+                <td>{row.sku || row.productSku || '—'}</td>
+                <td>{row.location || row.location_name || '—'}</td>
+                <td>{Number(row.quantity || row.qty || 0)}</td>
+                <td>{currency(row.unit_cost || row.unitCost || 0)}</td>
+                <td>{currency(row.total_cost || row.totalValue || 0)}</td>
+              </tr>
+            ))}
+            {renderTotalsRow(columns, totals)}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const LowStockReport = () => {
+    const rows = asRows(data?.data || data?.lowStockProducts || []);
+    const columns = [
+      { key: 'product', label: 'Product' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'recorded_quantity', label: 'Current Qty' },
+      { key: 'reorder_level', label: 'Reorder' },
+      { key: 'actual_remaining', label: 'Actual Remaining' },
+      { key: 'alert_level', label: 'Alert' },
+    ];
+    const totals = {
+      product: 'TOTAL',
+      recorded_quantity: rows.reduce((sum, row) => sum + Number(row.recorded_quantity || row.currentStock || 0), 0),
+      reorder_level: rows.reduce((sum, row) => sum + Number(row.reorder_level || row.reorderLevel || 0), 0),
+      actual_remaining: rows.reduce((sum, row) => sum + Number(row.actual_remaining || row.actualRemaining || 0), 0),
+    };
+
+    return (
+      <div className="panel">
+        <table className="table">
+          <thead>
+            <tr>
+              {columns.map((col) => <th key={col.key}>{col.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx}>
+                <td>{row.product_name || row.productName || row.product || '—'}</td>
+                <td>{row.sku || '—'}</td>
+                <td>{Number(row.recorded_quantity || row.currentStock || 0)}</td>
+                <td>{Number(row.reorder_level || row.reorderLevel || 0)}</td>
+                <td>{Number(row.actual_remaining || row.actualRemaining || 0)}</td>
+                <td><span className="badge badge-warning">{row.alert_level || row.alertLevel || 'LOW'}</span></td>
+              </tr>
+            ))}
+            {renderTotalsRow(columns, totals)}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const MovementsReport = () => {
+    const rows = asRows(data?.data || []);
+    const columns = [
+      { key: 'type', label: 'Type' },
+      { key: 'product', label: 'Product' },
+      { key: 'quantity', label: 'Qty' },
+      { key: 'from_location', label: 'From' },
+      { key: 'to_location', label: 'To' },
+      { key: 'value', label: 'Value' },
+    ];
+    const totals = {
+      type: 'TOTAL',
+      quantity: rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
+      value: rows.reduce((sum, row) => sum + Number(row.value || row.total_cost || 0), 0),
+    };
+
+    return (
+      <div className="panel">
+        <table className="table">
+          <thead>
+            <tr>
+              {columns.map((col) => <th key={col.key}>{col.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx}>
+                <td>{row.type}</td>
+                <td>{row.product || row.product_name || '—'}</td>
+                <td>{Number(row.quantity || 0)}</td>
+                <td>{row.from_location || '—'}</td>
+                <td>{row.to_location || '—'}</td>
+                <td>{currency(row.value || row.total_cost || 0)}</td>
+              </tr>
+            ))}
+            {renderTotalsRow(columns, totals)}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const FIFOCostReport = () => {
+    const rows = asRows(data?.data || []);
+    const columns = [
+      { key: 'product', label: 'Product' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'quantity_issued', label: 'Qty Issued' },
+      { key: 'unit_cost', label: 'Unit Cost' },
+      { key: 'total_cost', label: 'COGS' },
+      { key: 'issued_by', label: 'Issued By' },
+    ];
+    const totals = {
+      product: 'TOTAL',
+      quantity_issued: rows.reduce((sum, row) => sum + Number(row.quantity_issued || row.quantity || 0), 0),
+      total_cost: rows.reduce((sum, row) => sum + Number(row.total_cost || row.totalCost || 0), 0),
+    };
+
+    return (
+      <div className="panel">
+        <table className="table">
+          <thead>
+            <tr>
+              {columns.map((col) => <th key={col.key}>{col.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx}>
+                <td>{row.product_name || row.product || '—'}</td>
+                <td>{row.sku || '—'}</td>
+                <td>{Number(row.quantity_issued || row.quantity || 0)}</td>
+                <td>{currency(row.unit_cost || row.unitCost || 0)}</td>
+                <td>{currency(row.total_cost || row.totalCost || 0)}</td>
+                <td>{row.issued_by || row.issuedBy || 'System'}</td>
+              </tr>
+            ))}
+            {renderTotalsRow(columns, totals)}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const AuditReport = () => {
+    const rows = asRows(data?.data || data?.auditLogs || []);
+    const columns = [
+      { key: 'timestamp', label: 'Timestamp' },
+      { key: 'user', label: 'User' },
+      { key: 'action', label: 'Action' },
+      { key: 'entity', label: 'Entity' },
+    ];
+    const totals = { user: 'TOTAL', action: rows.length, entity: '' };
+
+    return (
+      <div className="panel">
+        <table className="table">
+          <thead>
+            <tr>
+              {columns.map((col) => <th key={col.key}>{col.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((log, idx) => (
+              <tr key={idx}>
+                <td>{new Date(log.timestamp || log.createdAt).toLocaleString()}</td>
+                <td>{log.user || log.user_name || 'System'}</td>
+                <td>{log.action}</td>
+                <td>{log.entity || log.entityType || '—'}</td>
+              </tr>
+            ))}
+            {renderTotalsRow(columns, totals)}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   return (
     <div className="content-space">
@@ -229,19 +356,9 @@ const ReportsPage = () => {
           <div className="toolbar-actions">
             <div className="toolbar-group">
               <label className="field-label">Start Date:</label>
-              <input
-                type="date"
-                name="startDate"
-                value={dateRange.startDate}
-                onChange={handleDateChange}
-              />
+              <input type="date" name="startDate" value={dateRange.startDate} onChange={handleDateChange} />
               <label className="field-label">End Date:</label>
-              <input
-                type="date"
-                name="endDate"
-                value={dateRange.endDate}
-                onChange={handleDateChange}
-              />
+              <input type="date" name="endDate" value={dateRange.endDate} onChange={handleDateChange} />
             </div>
           </div>
         </div>
@@ -262,6 +379,7 @@ const ReportsPage = () => {
           {loading && <div className="alert alert-info">Loading report data...</div>}
           {!loading && activeReport === 'overview' && <OverviewReport />}
           {!loading && activeReport === 'valuation' && <ValuationReport />}
+          {!loading && activeReport === 'fifo-cost' && <FIFOCostReport />}
           {!loading && activeReport === 'low-stock' && <LowStockReport />}
           {!loading && activeReport === 'movements' && <MovementsReport />}
           {!loading && activeReport === 'audit' && <AuditReport />}

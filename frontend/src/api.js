@@ -18,7 +18,8 @@ const handleResponse = async (response) => {
   return payload;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
+// Default to backend API on port 3000 when VITE_API_BASE not provided (local dev)
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api/v1';
 
 export const apiGet = async (path, token) => {
   const response = await fetch(`${API_BASE}${path}`, {

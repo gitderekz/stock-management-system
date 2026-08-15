@@ -7,6 +7,10 @@ const PurchaseOrder = sequelize.define('PurchaseOrder', {
     primaryKey: true,
     autoIncrement: true,
   },
+  supplier_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
   po_number: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -46,6 +50,10 @@ const PurchaseOrder = sequelize.define('PurchaseOrder', {
   },
   notes: {
     type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  created_by: {
+    type: DataTypes.INTEGER,
     allowNull: true,
   },
 }, {

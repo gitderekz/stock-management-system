@@ -103,13 +103,13 @@ const ProductsPage = () => {
       const matchesSupplier = !filters.supplierId || product.supplierId === Number(filters.supplierId);
       const matchesCondition = !filters.condition || product.condition === filters.condition;
       
-      const matchesPrice = (!filters.minPrice || product.price >= Number(filters.minPrice)) &&
-        (!filters.maxPrice || product.price <= Number(filters.maxPrice));
+      const matchesPrice = (!filters.minPrice || (product.price || 0) >= Number(filters.minPrice)) &&
+        (!filters.maxPrice || (product.price || 0) <= Number(filters.maxPrice));
       
-      const matchesQuantity = (!filters.minQuantity || product.quantity >= Number(filters.minQuantity)) &&
-        (!filters.maxQuantity || product.quantity <= Number(filters.maxQuantity));
+      const matchesQuantity = (!filters.minQuantity || (product.quantity || 0) >= Number(filters.minQuantity)) &&
+        (!filters.maxQuantity || (product.quantity || 0) <= Number(filters.maxQuantity));
       
-      const matchesLowStock = !filters.showLowStock || product.quantity < 10;
+      const matchesLowStock = !filters.showLowStock || (product.quantity || 0) < 10;
       
       return matchesSearch && matchesCategory && matchesBrand && matchesSupplier && 
              matchesCondition && matchesPrice && matchesQuantity && matchesLowStock;

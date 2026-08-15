@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiGet, apiPost } from '../api.js';
 import Modal from '../components/Modal.jsx';
@@ -6,6 +7,7 @@ import { useModal } from '../hooks/useModal.js';
 
 const initialForm = {
   purchaseOrderId: '',
+  locationId: '',
   items: [{ productId: '', quantity: 0, unitCost: 0, condition: 'new' }],
   receivedDate: new Date().toISOString().split('T')[0],
   inspectionNotes: '',
@@ -14,10 +16,13 @@ const initialForm = {
 
 const StockInPage = () => {
   const { token, user } = useAuth();
+  const location = useLocation();
   const modal = useModal();
   const [stockInRecords, setStockInRecords] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [products, setProducts] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState(initialForm);
   const [selectedPO, setSelectedPO] = useState(null);
@@ -35,7 +40,36 @@ const StockInPage = () => {
     loadStockIn();
     loadPurchaseOrders();
     loadProducts();
+    loadUsers();
+    loadLocations();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const poId = params.get('po');
+    if (poId) {
+      handlePOSelect(poId);
+    }
+  }, [location.search, token]);
+
+  const loadUsers = async () => {
+    try {
+      const res = await apiGet('/users', token);
+      // API may return {success,data} or array
+      setUsers(res.data || res);
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  const loadLocations = async () => {
+    try {
+      const res = await apiGet('/locations', token);
+      setLocations(res.data || res);
+    } catch (err) {
+      // ignore
+    }
+  };
 
   const loadStockIn = async () => {
     try {
@@ -71,11 +105,82 @@ const StockInPage = () => {
     );
   };
 
-  const handlePOSelect = (poId) => {
+  const handlePOSelect = async (poId) => {
     const po = purchaseOrders.find((p) => String(p.id) === String(poId));
-    setSelectedPO(po || null);
-    setForm((prev) => ({ ...prev, purchaseOrderId: poId }));
+    let detailedPO = po;
+    if (poId) {
+      try {
+        const response = await apiGet(`/purchase-orders/${poId}`, token);
+        detailedPO = response.data || response;
+      } catch (err) {
+        console.warn('Could not load PO details for receiving:', err.message);
+      }
+    }
+
+    setSelectedPO(detailedPO || null);
+    setForm((prev) => ({
+      ...prev,
+      purchaseOrderId: poId,
+      locationId: prev.locationId || locations[0]?.id || '',
+      receivedBy: prev.receivedBy || user?.id || '',
+      items: detailedPO?.items?.length
+        ? detailedPO.items.map((it) => ({
+            productId: it.product_id || it.productId || '',
+            quantity: it.quantity || 0,
+            unitCost: it.unit_cost || it.unitCost || 0,
+            condition: 'new',
+            locationId: prev.locationId || locations[0]?.id || '',
+          }))
+        : [{ productId: '', quantity: 0, unitCost: 0, condition: 'new', locationId: prev.locationId || locations[0]?.id || '' }],
+    }));
   };
+
+  const renderItemsToReceiveTable = () => {
+    if (!selectedPO || !selectedPO.items || selectedPO.items.length === 0) {
+      return <div style={{ padding: '10px', textAlign: 'center', color: '#999' }}>No items selected</div>;
+    }
+    return (
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '20px' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#f5f5f5', borderBottom: '2px solid #ddd' }}>
+            <th style={{ padding: '8px', textAlign: 'left' }}>Product</th>
+            <th style={{ padding: '8px', textAlign: 'center' }}>Qty to Receive</th>
+            <th style={{ padding: '8px', textAlign: 'center' }}>Unit Cost</th>
+            <th style={{ padding: '8px', textAlign: 'center' }}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {selectedPO.items.map((item, idx) => {
+            const product = products.find((p) => p.id === (item.product_id || item.productId));
+            const unitCost = parseFloat(item.unit_cost || item.unitCost || 0);
+            const qty = parseInt(item.quantity || 0);
+            return (
+              <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '8px' }}>{product?.name || `Product #${item.product_id || item.productId}`}</td>
+                <td style={{ padding: '8px', textAlign: 'center' }}>{qty}</td>
+                <td style={{ padding: '8px', textAlign: 'center' }}>TZS {unitCost.toLocaleString()}</td>
+                <td style={{ padding: '8px', textAlign: 'center' }}>TZS {(unitCost * qty).toLocaleString()}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    );
+  };
+
+  // when a PO is selected, populate line items from PO items
+  useEffect(() => {
+    if (selectedPO && selectedPO.items) {
+      const mapped = selectedPO.items.map((it) => ({
+        productId: it.product_id || it.productId || '',
+        quantity: it.quantity || 0,
+        unitCost: it.unit_cost || it.unitCost || 0,
+        condition: 'new',
+        locationId: form.locationId || locations[0]?.id || '',
+      }));
+      setForm((prev) => ({ ...prev, items: mapped, locationId: prev.locationId || locations[0]?.id || '' }));
+    }
+  }, [selectedPO, locations]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -93,33 +198,37 @@ const StockInPage = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     try {
-      if (!form.purchaseOrderId && form.items.length === 0) {
-        setError('Please select a PO and at least one item');
+      if (!form.purchaseOrderId) {
+        setError('Please select a purchase order first');
         return;
       }
 
-      const created = [];
-      for (const item of form.items) {
-        if (!item.productId || item.quantity <= 0) continue;
-        const payload = {
-          product_id: parseInt(item.productId),
-          location_id: item.locationId || null,
-          quantity_received: parseInt(item.quantity),
-          purchase_order_id: form.purchaseOrderId || null,
-          unit_cost: parseFloat(item.unitCost) || 0,
-          landed_cost: parseFloat(item.landedCost) || parseFloat(item.unitCost) || 0,
-          condition: item.condition || 'new',
-          inspection_notes: form.inspectionNotes || null,
-        };
-
-        const response = await apiPost('/stock/in', payload, token);
-        if (response && response.data) {
-          created.push(response.data);
-        }
+      if (form.items.length === 0 || form.items.some((item) => !item.productId || !item.quantity || item.quantity <= 0)) {
+        setError('Please add at least one valid item to receive');
+        return;
       }
 
-      if (created.length > 0) {
-        setCreatedBatches(created.map((c) => ({ batch_number: c.batch_number, product_id: c.product, quantity_received: c.quantity_received })));
+      // Send a single request with items array to create batches server-side
+      const payload = {
+        purchase_order_id: form.purchaseOrderId || null,
+        location_id: form.locationId || locations[0]?.id || null,
+        items: form.items.map((item) => ({
+          purchase_order_item_id: item.purchase_order_item_id || null,
+          product_id: parseInt(item.productId),
+          quantity_received: parseInt(item.quantity),
+          unit_cost: parseFloat(item.unitCost) || 0,
+          landed_cost: parseFloat(item.landedCost) || parseFloat(item.unitCost) || 0,
+        })),
+        inspection_notes: form.inspectionNotes || null,
+        received_by: form.receivedBy || user?.id || null,
+        received_at: form.receivedDate || new Date().toISOString().split('T')[0],
+      };
+
+      const response = await apiPost('/stock/in', payload, token);
+      const result = response.data || response;
+      if (result && result.success) {
+        const batches = result.data?.batches || [];
+        setCreatedBatches(batches.map((b) => ({ batch_number: b.batch_number || b.id, product_id: null, quantity_received: null })));
         setMessage('Goods received and batches created');
         setError('');
         setForm(initialForm);
@@ -130,7 +239,7 @@ const StockInPage = () => {
           setMessage('');
         }, 1800);
       } else {
-        setError('No batches were created');
+        setError(result?.message || 'No batches were created');
       }
     } catch (err) {
       setError(err.message);
@@ -353,80 +462,40 @@ const StockInPage = () => {
               </div>
 
               <div className="field-group">
-                <label className="field-label">Received By</label>
-                <input
+                <label className="field-label">Location *</label>
+                <select
                   className="text-input"
-                  type="text"
+                  name="locationId"
+                  value={form.locationId}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="">Select location</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>{loc.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field-group">
+                <label className="field-label">Received By</label>
+                <select
+                  className="text-input"
                   name="receivedBy"
                   value={form.receivedBy}
                   onChange={handleChange}
                   required
-                />
+                >
+                  <option value="">Select receiver</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>{u.fullName || u.name || u.email}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="full-width">
                 <h4>Items to Receive</h4>
-                {form.items.map((item, index) => (
-                  <div key={index} className="item-grid">
-                    <div>
-                      <label>Product:</label>
-                      <div className="font-weight-bold">
-                        {getProductName(item.productId)}
-                      </div>
-                    </div>
-                    <div>
-                      <label>Quantity *</label>
-                      <input
-                        className="text-input"
-                        type="number"
-                        placeholder="Qty"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          handleItemChange(
-                            index,
-                            'quantity',
-                            e.target.value
-                          )
-                        }
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label>Unit Cost</label>
-                      <input
-                        className="text-input"
-                        type="number"
-                        placeholder="Cost"
-                        value={item.unitCost}
-                        onChange={(e) =>
-                          handleItemChange(
-                            index,
-                            'unitCost',
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label>Condition</label>
-                      <select
-                        className="text-input"
-                        value={item.condition}
-                        onChange={(e) =>
-                          handleItemChange(
-                            index,
-                            'condition',
-                            e.target.value
-                          )
-                        }
-                      >
-                        <option value="new">New</option>
-                        <option value="used">Used</option>
-                        <option value="damaged">Damaged</option>
-                      </select>
-                    </div>
-                  </div>
-                ))}
+                {renderItemsToReceiveTable()}
               </div>
 
               <div className="field-group full-width">

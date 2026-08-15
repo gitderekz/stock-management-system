@@ -1,4 +1,4 @@
-const { StockMovement, StockBatch, Product, Location, PurchaseOrder, User } = require('../models');
+const { StockMovement, StockBatch, Product, Location, PurchaseOrder, PurchaseOrderItem, User } = require('../models');
 const { createLog } = require('./logsController');
 const { v4: uuidv4 } = require('uuid');
 
@@ -52,133 +52,124 @@ const getStockIn = async (req, res) => {
   }
 };
 
-// Receive goods and create batch
+// Receive goods and create batch(es). Supports receiving from a Purchase Order (multiple items)
 const receiveGoods = async (req, res) => {
   try {
     const {
-      product_id,
-      location_id,
-      quantity_received,
       purchase_order_id,
-      unit_cost,
-      landed_cost,
-      condition,
+      location_id,
+      items, // optional array of { purchase_order_item_id, product_id, quantity_received, unit_cost, landed_cost }
       inspection_notes,
+      received_by,
     } = req.body;
 
-    if (!product_id || !location_id || !quantity_received) {
-      return res.status(400).json({
-        success: false,
-        message: 'product_id, location_id, and quantity_received required',
-      });
+    if (!location_id) {
+      return res.status(400).json({ success: false, message: 'location_id is required' });
     }
 
-    if (quantity_received <= 0) {
-      return res.status(400).json({ success: false, message: 'Quantity must be > 0' });
-    }
-
-    // Check product exists
-    const product = await Product.findByPk(product_id);
-    if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
-    }
-
-    // Check location exists
     const location = await Location.findByPk(location_id);
-    if (!location) {
-      return res.status(404).json({ success: false, message: 'Location not found' });
-    }
+    if (!location) return res.status(404).json({ success: false, message: 'Location not found' });
 
-    // Check purchase order if provided
     let po = null;
     if (purchase_order_id) {
-      po = await PurchaseOrder.findByPk(purchase_order_id);
-      if (!po) {
-        return res.status(404).json({ success: false, message: 'Purchase order not found' });
-      }
-    }
-
-    // Generate batch number (format: PPPP-LLLL-###)
-    // PPPP = first 4 letters of product name (uppercase)
-    // LLLL = first 4 letters of location name (uppercase)
-    // ### = sequential counter
-    const prodPrefix = product.name.substring(0, 4).toUpperCase();
-    const locPrefix = location.name.substring(0, 4).toUpperCase();
-    const randomNum = Math.floor(Math.random() * 900) + 100;
-    const batch_number = `${prodPrefix}-${locPrefix}-${randomNum}`;
-
-    // Create stock batch
-    const batch = await StockBatch.create({
-      batch_number,
-      product_id,
-      location_id,
-      purchase_order_id: purchase_order_id || null,
-      quantity_received: parseInt(quantity_received),
-      quantity_remaining: parseInt(quantity_received),
-      unit_cost: parseFloat(unit_cost) || 0,
-      unit_selling_price: 0, // To be set later
-      landed_cost: parseFloat(landed_cost) || parseFloat(unit_cost) || 0,
-      condition: condition || 'new',
-      received_at: new Date(),
-      received_by: req.user?.id || null,
-      inspection_notes: inspection_notes || null,
-    });
-
-    // Create stock movement record
-    const movement = await StockMovement.create({
-      type: 'in',
-      product_id,
-      from_location_id: null,
-      to_location_id: location_id,
-      quantity: parseInt(quantity_received),
-      unit_cost: parseFloat(unit_cost) || 0,
-      total_cost: (parseFloat(unit_cost) || 0) * parseInt(quantity_received),
-      purpose: purchase_order_id ? `PO Delivery (${po.po_number})` : 'Stock In',
-      reference: purchase_order_id ? po.po_number : null,
-      issued_by: req.user?.id || null,
-      notes: `Batch ${batch_number} created`,
-    });
-
-    // Update PO delivery status if provided
-    if (po) {
-      const currentDelivered = po.delivery_status;
-      let newDeliveryStatus = 'PARTIALLY_RECEIVED';
-
-      // If quantities match or exceed, mark as RECEIVED
-      if (quantity_received >= (po.total_amount / po.total_amount)) {
-        newDeliveryStatus = 'RECEIVED';
-      }
-
-      await po.update({
-        delivery_status: newDeliveryStatus,
-        actual_delivery: new Date(),
+      po = await PurchaseOrder.findByPk(purchase_order_id, {
+        include: [{ model: PurchaseOrderItem, as: 'items' }],
       });
+      if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
     }
 
-    await createLog(
-      req.user?.id,
-      'StockBatch',
-      'create',
-      batch.id,
-      `Stock received: ${product.name} x${quantity_received} to ${location.name}`,
-      { batch_number, product_id, location_id, quantity_received, po_id: purchase_order_id },
-      req.ip
-    );
+    // Build receive list: either from provided items or from PO items
+    let receiveList = [];
+    if (items && Array.isArray(items) && items.length > 0) {
+      receiveList = items.map(i => ({
+        purchase_order_item_id: i.purchase_order_item_id || null,
+        product_id: i.product_id,
+        quantity_received: parseInt(i.quantity_received, 10) || 0,
+        unit_cost: i.unit_cost !== undefined ? parseFloat(i.unit_cost) : undefined,
+        landed_cost: i.landed_cost !== undefined ? parseFloat(i.landed_cost) : undefined,
+      }));
+    } else if (po) {
+      receiveList = (po.items || []).map(i => ({
+        purchase_order_item_id: i.id,
+        product_id: i.product_id,
+        quantity_received: i.quantity,
+        unit_cost: parseFloat(i.unit_cost),
+        landed_cost: i.landed_cost ? parseFloat(i.landed_cost) : parseFloat(i.unit_cost),
+      }));
+    } else {
+      return res.status(400).json({ success: false, message: 'No items to receive. Provide purchase_order_id or items array.' });
+    }
 
-    res.status(201).json({
-      success: true,
-      message: 'Goods received and batch created',
-      data: {
-        batch_id: batch.id,
+    const createdBatches = [];
+
+    for (const entry of receiveList) {
+      if (!entry.product_id || !entry.quantity_received || entry.quantity_received <= 0) continue;
+
+      const product = await Product.findByPk(entry.product_id);
+      if (!product) continue; // skip missing product
+
+      // Generate batch number using uuid fragment to avoid collisions
+      const batch_number = `${product.name.substring(0,4).toUpperCase()}-${location.name.substring(0,4).toUpperCase()}-${uuidv4().split('-')[0]}`;
+
+      const batch = await StockBatch.create({
         batch_number,
-        product: product.name,
-        location: location.name,
-        quantity_received,
-        unit_cost,
-        landed_cost,
-        movement_id: movement.id,
-      },
-    });
+        product_id: entry.product_id,
+        location_id,
+        purchase_order_id: purchase_order_id || null,
+        quantity_received: parseInt(entry.quantity_received, 10),
+        quantity_remaining: parseInt(entry.quantity_received, 10),
+        unit_cost: entry.unit_cost !== undefined ? parseFloat(entry.unit_cost) : (product.cost || 0),
+        unit_selling_price: 0,
+        landed_cost: entry.landed_cost !== undefined ? parseFloat(entry.landed_cost) : (entry.unit_cost !== undefined ? parseFloat(entry.unit_cost) : 0),
+        condition: 'new',
+        received_at: new Date(),
+        received_by: received_by || req.user?.id || null,
+        inspection_notes: inspection_notes || null,
+      });
+
+      // create stock movement
+      const movement = await StockMovement.create({
+        type: 'in',
+        product_id: entry.product_id,
+        from_location_id: null,
+        to_location_id: location_id,
+        quantity: parseInt(entry.quantity_received, 10),
+        unit_cost: batch.unit_cost || 0,
+        total_cost: (batch.unit_cost || 0) * parseInt(entry.quantity_received, 10),
+        purpose: purchase_order_id ? `PO Delivery (${po.po_number})` : 'Stock In',
+        reference: purchase_order_id ? po.po_number : null,
+        issued_by: received_by || req.user?.id || null,
+        notes: `Batch ${batch_number} created from receive`,
+      });
+
+      createdBatches.push({ batch, movement });
+
+      await createLog(
+        req.user?.id,
+        'StockBatch',
+        'create',
+        batch.id,
+        `Stock received: ${product.name} x${entry.quantity_received} to ${location.name}`,
+        { batch_number, product_id: entry.product_id, location_id, quantity_received: entry.quantity_received, po_id: purchase_order_id },
+        req.ip
+      );
+    }
+
+    // Update PO delivery status if PO provided
+    if (po) {
+      const totalOrdered = (po.items || []).reduce((s, it) => s + (it.quantity || 0), 0);
+      const totalReceivedRows = await StockBatch.findAll({ where: { purchase_order_id: po.id } });
+      const totalReceived = totalReceivedRows.reduce((s, b) => s + (b.quantity_received || 0), 0);
+
+      let newDeliveryStatus = 'PENDING';
+      if (totalReceived <= 0) newDeliveryStatus = 'PENDING';
+      else if (totalReceived < totalOrdered) newDeliveryStatus = 'PARTIALLY_RECEIVED';
+      else newDeliveryStatus = 'RECEIVED';
+
+      await po.update({ delivery_status: newDeliveryStatus, actual_delivery: new Date() });
+    }
+
+    res.status(201).json({ success: true, message: 'Goods received', data: { batches: createdBatches.map(b => ({ id: b.batch.id, batch_number: b.batch.batch_number })) } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
