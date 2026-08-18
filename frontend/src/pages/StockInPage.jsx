@@ -18,6 +18,7 @@ const StockInPage = () => {
   const { token, user } = useAuth();
   const location = useLocation();
   const modal = useModal();
+  const viewModal = useModal();
   const [stockInRecords, setStockInRecords] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -26,6 +27,7 @@ const StockInPage = () => {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState(initialForm);
   const [selectedPO, setSelectedPO] = useState(null);
+  const [viewingStockIn, setViewingStockIn] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [createdBatches, setCreatedBatches] = useState([]);
@@ -125,13 +127,16 @@ const StockInPage = () => {
       receivedBy: prev.receivedBy || user?.id || '',
       items: detailedPO?.items?.length
         ? detailedPO.items.map((it) => ({
+            id: it.id || null,
+            purchase_order_item_id: it.id || null,
             productId: it.product_id || it.productId || '',
             quantity: it.quantity || 0,
             unitCost: it.unit_cost || it.unitCost || 0,
+            landedCost: it.landed_cost || it.landedCost || 0,
             condition: 'new',
             locationId: prev.locationId || locations[0]?.id || '',
           }))
-        : [{ productId: '', quantity: 0, unitCost: 0, condition: 'new', locationId: prev.locationId || locations[0]?.id || '' }],
+        : [{ productId: '', quantity: 0, unitCost: 0, landedCost: 0, condition: 'new', locationId: prev.locationId || locations[0]?.id || '' }],
     }));
   };
 
@@ -172,15 +177,20 @@ const StockInPage = () => {
   useEffect(() => {
     if (selectedPO && selectedPO.items) {
       const mapped = selectedPO.items.map((it) => ({
+        id: it.id || null,
+        purchase_order_item_id: it.id || null,
         productId: it.product_id || it.productId || '',
         quantity: it.quantity || 0,
         unitCost: it.unit_cost || it.unitCost || 0,
+        landedCost: it.landed_cost || it.landedCost || 0,
         condition: 'new',
         locationId: form.locationId || locations[0]?.id || '',
       }));
       setForm((prev) => ({ ...prev, items: mapped, locationId: prev.locationId || locations[0]?.id || '' }));
     }
   }, [selectedPO, locations]);
+
+  const poDate = selectedPO ? (selectedPO.order_date || selectedPO.orderDate || selectedPO.createdAt || selectedPO.created_at) : null;
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -193,6 +203,16 @@ const StockInPage = () => {
       items[index] = { ...items[index], [field]: field === 'quantity' || field === 'unitCost' ? Number(value) : value };
       return { ...prev, items };
     });
+  };
+
+  const handleViewStockIn = async (id) => {
+    try {
+      const response = await apiGet(`/stock/in/${id}`, token);
+      setViewingStockIn(response.data || response);
+      viewModal.open();
+    } catch (err) {
+      setError(`Failed to load stock-in details: ${err.message}`);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -261,6 +281,36 @@ const StockInPage = () => {
 
     return matchesSearch && matchesMinDate && matchesMaxDate;
   });
+
+  const formatReceiptDate = (value) => {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '—';
+    return parsed.toLocaleDateString();
+  };
+
+  const getReceiptPoNumber = (record) => {
+    return (
+      record?.purchaseOrder?.po_number ||
+      record?.purchase_order?.po_number ||
+      record?.po_number ||
+      (record?.purchase_order_id ? `PO-${record.purchase_order_id}` : '—')
+    );
+  };
+
+  const getReceiptItemCount = (record) => {
+    if (Array.isArray(record?.items)) return record.items.length;
+    return Number(record?.items_count || 0);
+  };
+
+  const getReceiptReceiverName = (record) => {
+    return (
+      record?.receiver?.fullName ||
+      record?.receiver?.name ||
+      record?.received_by ||
+      'System'
+    );
+  };
 
   return (
     <div className="content-space">
@@ -371,20 +421,15 @@ const StockInPage = () => {
                 <td className="font-weight-bold">
                   {record.reference_number || `GR-${record.id}`}
                 </td>
+                <td>{getReceiptPoNumber(record)}</td>
+                <td>{formatReceiptDate(record.received_date || record.receipt_date || record.created_at || record.createdAt)}</td>
+                <td>{getReceiptItemCount(record)}</td>
                 <td>
-                  {record.purchaseOrder?.po_number ||
-                    `PO-${record.purchase_order_id}`}
+                  <span className="badge badge-success">{record.status || 'Received'}</span>
                 </td>
+                <td>{getReceiptReceiverName(record)}</td>
                 <td>
-                  {new Date(record.received_date).toLocaleDateString()}
-                </td>
-                <td>{record.items?.length || 0}</td>
-                <td>
-                  <span className="badge badge-success">Received</span>
-                </td>
-                <td>{record.received_by || 'System'}</td>
-                <td>
-                  <button className="btn btn-ghost btn-sm">View</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleViewStockIn(record.id)}>View</button>
                 </td>
               </tr>
             ))}
@@ -428,22 +473,18 @@ const StockInPage = () => {
             </>
           ) : (
             <>
-              <div className="info-grid">
+              <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '16px 20px', marginBottom: '16px' }}>
                 <div className="info-item">
                   <label>Selected PO</label>
-                  <div className="font-weight-bold">
-                    {selectedPO.po_number || `PO-${selectedPO.id}`}
-                  </div>
+                  <div className="font-weight-bold">{selectedPO?.po_number || selectedPO?.purchase_order_no || (selectedPO?.id ? `PO-${selectedPO.id}` : '—')}</div>
                 </div>
                 <div className="info-item">
                   <label>Supplier</label>
-                  <div>{selectedPO.supplier?.name}</div>
+                  <div>{selectedPO?.supplier?.name || selectedPO?.supplier || '—'}</div>
                 </div>
                 <div className="info-item">
                   <label>PO Date</label>
-                  <div>
-                    {new Date(selectedPO.po_date).toLocaleDateString()}
-                  </div>
+                  <div>{formatReceiptDate(poDate)}</div>
                 </div>
               </div>
 
@@ -544,6 +585,88 @@ const StockInPage = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* View Stock-In Details Modal */}
+      <Modal
+        isOpen={viewModal.isOpen}
+        title="Stock-In Details"
+        onClose={() => {
+          viewModal.close();
+          setViewingStockIn(null);
+        }}
+        size="large"
+      >
+        {viewingStockIn && (
+          <>
+            <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '16px 20px', marginBottom: '20px' }}>
+              <div className="info-item">
+                <label>Reference Number</label>
+                <div className="font-weight-bold">{viewingStockIn.reference_number || `GR-${viewingStockIn.id}`}</div>
+              </div>
+              <div className="info-item">
+                <label>Purchase Order</label>
+                <div>{viewingStockIn.purchaseOrder?.po_number || viewingStockIn.purchase_order?.po_number || (viewingStockIn.purchase_order_id ? `PO-${viewingStockIn.purchase_order_id}` : '—')}</div>
+              </div>
+              <div className="info-item">
+                <label>Received Date</label>
+                <div>{formatReceiptDate(viewingStockIn.received_date || viewingStockIn.receipt_date || viewingStockIn.created_at || viewingStockIn.createdAt)}</div>
+              </div>
+              <div className="info-item">
+                <label>Location</label>
+                <div>{viewingStockIn.location?.name || viewingStockIn.location_id}</div>
+              </div>
+              <div className="info-item">
+                <label>Received By</label>
+                <div>{viewingStockIn.receiver?.fullName || viewingStockIn.receiver?.name || viewingStockIn.received_by || 'System'}</div>
+              </div>
+              <div className="info-item">
+                <label>Total Cost</label>
+                <div className="font-weight-bold">TZS {(viewingStockIn.total_cost || 0).toLocaleString()}</div>
+              </div>
+              <div className="info-item">
+                <label>Status</label>
+                <div><span className="badge badge-success">{viewingStockIn.status || 'Received'}</span></div>
+              </div>
+              <div className="info-item">
+                <label>Inspection Notes</label>
+                <div style={{whiteSpace: 'pre-wrap'}}>{viewingStockIn.notes || '—'}</div>
+              </div>
+            </div>
+
+            {viewingStockIn.items && viewingStockIn.items.length > 0 && (
+              <>
+                <div className="section-divider" style={{margin: '20px 0'}}></div>
+                <h4 style={{marginBottom: '10px'}}>Received Items</h4>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th style={{textAlign: 'center'}}>Quantity</th>
+                      <th style={{textAlign: 'center'}}>Unit Cost</th>
+                      <th style={{textAlign: 'center'}}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewingStockIn.items.map((item, idx) => {
+                      const product = products.find(p => p.id === item.product_id);
+                      const unitCost = parseFloat(item.unit_price || 0);
+                      const qty = parseInt(item.quantity || 0);
+                      return (
+                        <tr key={idx}>
+                          <td>{product?.name || `Product #${item.product_id}`}</td>
+                          <td style={{textAlign: 'center'}}>{qty}</td>
+                          <td style={{textAlign: 'center'}}>TZS {unitCost.toLocaleString()}</td>
+                          <td style={{textAlign: 'center'}}>TZS {(unitCost * qty).toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </>
+        )}
       </Modal>
     </div>
   );

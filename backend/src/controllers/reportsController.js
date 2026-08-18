@@ -154,7 +154,14 @@ const generateFIFOCostReport = async (req, res) => {
     });
 
     const cogs_data = movements.map(m => {
-      const allocations = m.batch_allocations ? JSON.parse(m.batch_allocations) : [];
+      let allocations = [];
+      try {
+        const raw = m.batch_allocations;
+        allocations = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
+      } catch (e) {
+        allocations = [];
+      }
+
       return {
         movement_id: m.id,
         product_name: m.product?.name || 'Unknown',

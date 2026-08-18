@@ -83,6 +83,37 @@ module.exports = {
             allowNull: true,
           });
         }
+
+        if (!columns.location_id) {
+          await queryInterface.addColumn('stock_movements', 'location_id', {
+            type: Sequelize.INTEGER,
+            references: { model: 'locations', key: 'id' },
+            allowNull: true,
+          });
+        }
+
+        if (!columns.created_by) {
+          await queryInterface.addColumn('stock_movements', 'created_by', {
+            type: Sequelize.INTEGER,
+            references: { model: 'users', key: 'id' },
+            allowNull: true,
+          });
+        }
+
+        if (!columns.reason) {
+          await queryInterface.addColumn('stock_movements', 'reason', {
+            type: Sequelize.TEXT,
+            allowNull: true,
+          });
+        }
+
+        if (!columns.location_id && columns.to_location_id) {
+          await queryInterface.sequelize.query('UPDATE stock_movements SET location_id = to_location_id WHERE location_id IS NULL');
+        }
+
+        if (!columns.created_by && columns.issued_by) {
+          await queryInterface.sequelize.query('UPDATE stock_movements SET created_by = issued_by WHERE created_by IS NULL');
+        }
       }
 
       console.log('Applied: 20260814000003-update-stock-movements.js');
@@ -99,7 +130,7 @@ module.exports = {
         const columnsToRemove = [
           'product_id', 'from_location_id', 'to_location_id', 
           'unit_cost', 'total_cost', 'purpose', 'reference', 
-          'issued_by', 'batch_allocations', 'notes'
+          'issued_by', 'batch_allocations', 'notes', 'location_id', 'created_by', 'reason'
         ];
 
         for (const col of columnsToRemove) {

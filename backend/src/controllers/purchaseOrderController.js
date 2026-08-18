@@ -123,6 +123,15 @@ const createPurchaseOrder = async (req, res) => {
 
     // Add line items if provided
     if (items && Array.isArray(items) && items.length > 0) {
+      for (const item of items) {
+        if (!item.product_id) continue;
+
+        const product = await Product.findByPk(item.product_id);
+        if (product && Number(product.price || 0) <= 0 && Number(item.unit_cost || 0) > 0) {
+          await product.update({ price: Number(item.unit_cost) });
+        }
+      }
+
       const itemsData = items.map(item => ({
         purchase_order_id: po.id,
         product_id: item.product_id,

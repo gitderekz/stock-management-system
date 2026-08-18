@@ -1,30 +1,31 @@
-const { StockMovement, StockBatch, Product, Location, User } = require('../models');
+const { Op } = require('sequelize');
+const { StockMovement, StockBatch, Product, Location, User, StockTransfer, StockTransferItem } = require('../models');
 const { createLog } = require('./logsController');
-const { sequelize } = require('../models');
 
-// List all stock transfers
+// List all stock transfers from stock_transfers table
 const listStockTransfers = async (req, res) => {
   try {
-    const movements = await StockMovement.findAll({
-      where: { type: 'transfer' },
+    const rows = await require('../models').StockTransfer.findAll({
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name'] },
-        { model: Location, as: 'from_location', attributes: ['id', 'name'] },
-        { model: Location, as: 'to_location', attributes: ['id', 'name'] },
-        { model: User, as: 'issuer', attributes: ['id', 'fullName'] },
+        { model: require('../models').StockTransferItem, as: 'items', include: [{ model: require('../models').Product, as: 'product', attributes: ['id', 'name'] }] },
+        { model: require('../models').Location, as: 'source_location', attributes: ['id', 'name'] },
+        { model: require('../models').Location, as: 'destination_location', attributes: ['id', 'name'] },
+        { model: require('../models').User, as: 'requestedByUser', attributes: ['id', 'fullName'] },
       ],
       order: [['createdAt', 'DESC']],
     });
 
-    const data = movements.map(m => ({
-      id: m.id,
-      product: m.product?.name || 'Unknown',
-      quantity: m.quantity,
-      from_location: m.from_location?.name || 'Unknown',
-      to_location: m.to_location?.name || 'Unknown',
-      reference: m.reference,
-      transferred_by: m.issuer?.fullName || 'System',
-      transferred_at: m.createdAt,
+    const data = rows.map((row) => ({
+      id: row.id,
+      reference: row.reference_no,
+      product: row.items?.[0]?.product?.name || 'Unknown',
+      quantity: row.items?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0,
+      from_location: row.source_location?.name || 'Unknown',
+      to_location: row.destination_location?.name || 'Unknown',
+      transferred_by: row.requestedByUser?.fullName || 'System',
+      transferred_at: row.createdAt,
+      status: row.status,
+      notes: row.notes,
     }));
 
     res.json({ success: true, data, pagination: { total: data.length } });
@@ -33,23 +34,23 @@ const listStockTransfers = async (req, res) => {
   }
 };
 
-// Get single transfer
+// Get single transfer from stock_transfers table
 const getStockTransfer = async (req, res) => {
   try {
-    const movement = await StockMovement.findByPk(req.params.id, {
+    const row = await require('../models').StockTransfer.findByPk(req.params.id, {
       include: [
-        { model: Product, as: 'product' },
-        { model: Location, as: 'from_location' },
-        { model: Location, as: 'to_location' },
-        { model: User, as: 'issuer' },
+        { model: require('../models').StockTransferItem, as: 'items', include: [{ model: require('../models').Product, as: 'product' }] },
+        { model: require('../models').Location, as: 'source_location' },
+        { model: require('../models').Location, as: 'destination_location' },
+        { model: require('../models').User, as: 'requestedByUser' },
       ],
     });
 
-    if (!movement || movement.type !== 'transfer') {
+    if (!row) {
       return res.status(404).json({ success: false, message: 'Stock transfer not found' });
     }
 
-    res.json({ success: true, data: movement });
+    res.json({ success: true, data: row });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -58,88 +59,92 @@ const getStockTransfer = async (req, res) => {
 // Transfer stock using FIFO allocation
 const createTransferFIFO = async (req, res) => {
   try {
-    const { product_id, from_location_id, to_location_id, quantity, reference } = req.body;
+    const {
+      product_id,
+      productId,
+      from_location_id,
+      fromLocationId,
+      to_location_id,
+      toLocationId,
+      destinationLocationId,
+      sourceLocationId,
+      quantity,
+      reference,
+      referenceNo,
+    } = req.body;
 
-    if (!product_id || !from_location_id || !to_location_id || !quantity) {
+    const finalProductId = product_id ?? productId;
+    const finalFromLocationId = from_location_id ?? fromLocationId ?? sourceLocationId;
+    const finalToLocationId = to_location_id ?? toLocationId ?? destinationLocationId;
+    const finalQuantity = quantity ?? 0;
+    const finalReference = reference ?? referenceNo ?? null;
+
+    if (!finalProductId || !finalFromLocationId || !finalToLocationId || !finalQuantity) {
       return res.status(400).json({
         success: false,
         message: 'product_id, from_location_id, to_location_id, and quantity required',
       });
     }
 
-    if (quantity <= 0) {
+    if (finalQuantity <= 0) {
       return res.status(400).json({ success: false, message: 'Quantity must be > 0' });
     }
 
-    // Check if same location
-    if (from_location_id === to_location_id) {
+    if (finalFromLocationId === finalToLocationId) {
       return res.status(400).json({ success: false, message: 'Cannot transfer to same location' });
     }
 
-    // Check product exists
-    const product = await Product.findByPk(product_id);
+    const product = await Product.findByPk(finalProductId);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    // Check locations exist
-    const fromLoc = await Location.findByPk(from_location_id);
+    const fromLoc = await Location.findByPk(finalFromLocationId);
     if (!fromLoc) {
       return res.status(404).json({ success: false, message: 'Source location not found' });
     }
 
-    const toLoc = await Location.findByPk(to_location_id);
+    const toLoc = await Location.findByPk(finalToLocationId);
     if (!toLoc) {
       return res.status(404).json({ success: false, message: 'Destination location not found' });
     }
 
-    // Get batches at source location, sorted by received_at (FIFO)
     const batches = await StockBatch.findAll({
       where: {
-        product_id,
-        location_id: from_location_id,
-        quantity_remaining: { [sequelize.Op.gt]: 0 },
+        product_id: finalProductId,
+        location_id: finalFromLocationId,
+        quantity_remaining: { [Op.gt]: 0 },
       },
       order: [['received_at', 'ASC']],
     });
 
     if (batches.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: `No stock of product at source location`,
-      });
+      return res.status(400).json({ success: false, message: 'No stock available at source location' });
     }
 
     const allocations = [];
-    let remainingQty = quantity;
+    let remainingQty = Number(finalQuantity);
     let totalCost = 0;
 
-    // Allocate from oldest batches first (FIFO)
     for (const batch of batches) {
       if (remainingQty <= 0) break;
-
-      const qtyToMove = Math.min(remainingQty, batch.quantity_remaining);
+      const qtyToMove = Math.min(remainingQty, Number(batch.quantity_remaining || 0));
+      if (qtyToMove <= 0) continue;
 
       allocations.push({
         batch_id: batch.id,
         batch_number: batch.batch_number,
         quantity: qtyToMove,
         unit_cost: batch.unit_cost,
-        total_cost: parseFloat(batch.unit_cost) * qtyToMove,
+        total_cost: parseFloat(batch.unit_cost || 0) * qtyToMove,
       });
 
-      totalCost += parseFloat(batch.unit_cost) * qtyToMove;
-
-      // Update batch at source
-      await batch.update({
-        quantity_remaining: batch.quantity_remaining - qtyToMove,
-      });
-
-      // Create corresponding batch at destination
+      totalCost += parseFloat(batch.unit_cost || 0) * qtyToMove;
+      await batch.update({ quantity_remaining: Number(batch.quantity_remaining || 0) - qtyToMove });
       await StockBatch.create({
-        batch_number: batch.batch_number + '-TRANS',
-        product_id,
-        location_id: to_location_id,
+        batch_number: `${batch.batch_number}-TRANS`,
+        product_id: finalProductId,
+        location_id: finalToLocationId,
         quantity_received: qtyToMove,
         quantity_remaining: qtyToMove,
         unit_cost: batch.unit_cost,
@@ -150,56 +155,51 @@ const createTransferFIFO = async (req, res) => {
         received_by: req.user?.id || null,
         notes: `Transfer from ${fromLoc.name}`,
       });
-
       remainingQty -= qtyToMove;
     }
 
     if (remainingQty > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient inventory: requested ${quantity}, available ${quantity - remainingQty}`,
-      });
+      return res.status(400).json({ success: false, message: `Insufficient inventory: requested ${finalQuantity}, available ${Number(finalQuantity) - remainingQty}` });
     }
 
-    // Create stock movement record
-    const movement = await StockMovement.create({
-      type: 'transfer',
-      product_id,
-      from_location_id,
-      to_location_id,
-      quantity,
-      unit_cost: totalCost / quantity,
-      total_cost: totalCost,
-      purpose: 'Internal Transfer',
-      reference: reference || null,
-      issued_by: req.user?.id || null,
-      batch_allocations: JSON.stringify(allocations),
+    const transferRecord = await StockTransfer.create({
+      referenceNo: finalReference || `TR-${Date.now()}`,
+      sourceLocationId: finalFromLocationId,
+      destinationLocationId: finalToLocationId,
+      requestedBy: req.user?.id || null,
+      approvedBy: req.user?.id || null,
+      status: 'COMPLETED',
       notes: 'Transferred using FIFO method',
     });
 
-    await createLog(
-      req.user?.id,
-      'StockMovement',
-      'create',
-      movement.id,
-      `Transfer: ${product.name} x${quantity} from ${fromLoc.name} to ${toLoc.name}`,
-      { product_id, from_location_id, to_location_id, quantity, allocations },
-      req.ip
-    );
+    for (const allocation of allocations) {
+      await StockTransferItem.create({
+        stockTransferId: transferRecord.id,
+        productId: finalProductId,
+        quantity: allocation.quantity,
+      });
+    }
 
-    res.status(201).json({
-      success: true,
-      message: 'Stock transferred with FIFO allocation',
-      data: {
-        movement_id: movement.id,
-        product: product.name,
-        from_location: fromLoc.name,
-        to_location: toLoc.name,
-        quantity,
-        allocations,
-        total_cost: totalCost,
-      },
+    const movement = await StockMovement.create({
+      type: 'transfer',
+      product_id: finalProductId,
+      from_location_id: finalFromLocationId,
+      to_location_id: finalToLocationId,
+      quantity: finalQuantity,
+      unit_cost: totalCost / Number(finalQuantity),
+      total_cost: totalCost,
+      purpose: 'Internal Transfer',
+      reference: finalReference,
+      issued_by: req.user?.id || null,
+      created_by: req.user?.id || null,
+      batch_allocations: JSON.stringify(allocations),
+      reason: 'Internal transfer',
+      notes: 'Transferred using FIFO method',
     });
+
+    await createLog(req.user?.id, 'StockTransfer', 'create', transferRecord.id, `Transfer: ${product.name} x${finalQuantity} from ${fromLoc.name} to ${toLoc.name}`, { product_id: finalProductId, from_location_id: finalFromLocationId, to_location_id: finalToLocationId, quantity: finalQuantity, allocations }, req.ip);
+
+    res.status(201).json({ success: true, message: 'Stock transferred with FIFO allocation', data: { movement_id: movement.id, transfer_id: transferRecord.id, product: product.name, from_location: fromLoc.name, to_location: toLoc.name, quantity: finalQuantity, allocations, total_cost: totalCost } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -208,78 +208,70 @@ const createTransferFIFO = async (req, res) => {
 // Transfer stock with manual batch selection
 const createTransferManual = async (req, res) => {
   try {
-    const { product_id, from_location_id, to_location_id, batch_allocations, reference } = req.body;
+    const {
+      product_id,
+      productId,
+      from_location_id,
+      fromLocationId,
+      to_location_id,
+      toLocationId,
+      destinationLocationId,
+      sourceLocationId,
+      batch_allocations,
+      quantity,
+      reference,
+      referenceNo,
+    } = req.body;
 
-    if (!product_id || !from_location_id || !to_location_id || !batch_allocations || batch_allocations.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'product_id, from_location_id, to_location_id, and batch_allocations required',
-      });
+    const finalProductId = product_id ?? productId;
+    const finalFromLocationId = from_location_id ?? fromLocationId ?? sourceLocationId;
+    const finalToLocationId = to_location_id ?? toLocationId ?? destinationLocationId;
+    const finalReference = reference ?? referenceNo ?? null;
+
+    if (!finalProductId || !finalFromLocationId || !finalToLocationId || !batch_allocations || batch_allocations.length === 0) {
+      return res.status(400).json({ success: false, message: 'product_id, from_location_id, to_location_id, and batch_allocations required' });
     }
 
-    // Check if same location
-    if (from_location_id === to_location_id) {
+    if (finalFromLocationId === finalToLocationId) {
       return res.status(400).json({ success: false, message: 'Cannot transfer to same location' });
     }
 
-    // Check product exists
-    const product = await Product.findByPk(product_id);
+    const product = await Product.findByPk(finalProductId);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    // Check locations exist
-    const fromLoc = await Location.findByPk(from_location_id);
-    if (!fromLoc) {
-      return res.status(404).json({ success: false, message: 'Source location not found' });
-    }
+    const fromLoc = await Location.findByPk(finalFromLocationId);
+    if (!fromLoc) return res.status(404).json({ success: false, message: 'Source location not found' });
 
-    const toLoc = await Location.findByPk(to_location_id);
-    if (!toLoc) {
-      return res.status(404).json({ success: false, message: 'Destination location not found' });
-    }
+    const toLoc = await Location.findByPk(finalToLocationId);
+    if (!toLoc) return res.status(404).json({ success: false, message: 'Destination location not found' });
 
     const allocations = [];
     let totalQty = 0;
     let totalCost = 0;
 
-    // Process each batch allocation
     for (const ba of batch_allocations) {
-      const batch = await StockBatch.findByPk(ba.batch_id);
+      const batch = await StockBatch.findByPk(ba.batch_id || ba.batchId);
       if (!batch) {
-        return res.status(404).json({ success: false, message: `Batch ${ba.batch_id} not found` });
+        return res.status(404).json({ success: false, message: `Batch ${ba.batch_id || ba.batchId} not found` });
       }
 
-      if (batch.quantity_remaining < ba.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: `Batch ${batch.batch_number} has insufficient quantity: ${batch.quantity_remaining} < ${ba.quantity}`,
-        });
+      const qty = Number(ba.quantity || 0);
+      if (batch.quantity_remaining < qty) {
+        return res.status(400).json({ success: false, message: `Batch ${batch.batch_number} has insufficient quantity` });
       }
 
-      allocations.push({
-        batch_id: batch.id,
-        batch_number: batch.batch_number,
-        quantity: ba.quantity,
-        unit_cost: batch.unit_cost,
-        total_cost: parseFloat(batch.unit_cost) * ba.quantity,
-      });
-
-      totalCost += parseFloat(batch.unit_cost) * ba.quantity;
-      totalQty += ba.quantity;
-
-      // Update batch at source
-      await batch.update({
-        quantity_remaining: batch.quantity_remaining - ba.quantity,
-      });
-
-      // Create corresponding batch at destination
+      allocations.push({ batch_id: batch.id, batch_number: batch.batch_number, quantity: qty, unit_cost: batch.unit_cost });
+      totalQty += qty;
+      totalCost += parseFloat(batch.unit_cost || 0) * qty;
+      await batch.update({ quantity_remaining: Number(batch.quantity_remaining || 0) - qty });
       await StockBatch.create({
-        batch_number: batch.batch_number + '-TRANS',
-        product_id,
-        location_id: to_location_id,
-        quantity_received: ba.quantity,
-        quantity_remaining: ba.quantity,
+        batch_number: `${batch.batch_number}-TRANS`,
+        product_id: finalProductId,
+        location_id: finalToLocationId,
+        quantity_received: qty,
+        quantity_remaining: qty,
         unit_cost: batch.unit_cost,
         unit_selling_price: batch.unit_selling_price,
         landed_cost: batch.landed_cost,
@@ -290,45 +282,24 @@ const createTransferManual = async (req, res) => {
       });
     }
 
-    // Create stock movement record
     const movement = await StockMovement.create({
       type: 'transfer',
-      product_id,
-      from_location_id,
-      to_location_id,
+      product_id: finalProductId,
+      from_location_id: finalFromLocationId,
+      to_location_id: finalToLocationId,
       quantity: totalQty,
       unit_cost: totalCost / totalQty,
       total_cost: totalCost,
-      purpose: 'Internal Transfer',
-      reference: reference || null,
+      purpose: 'Manual Transfer',
+      reference: finalReference,
       issued_by: req.user?.id || null,
       batch_allocations: JSON.stringify(allocations),
       notes: 'Transferred using manual batch selection',
     });
 
-    await createLog(
-      req.user?.id,
-      'StockMovement',
-      'create',
-      movement.id,
-      `Transfer (manual): ${product.name} x${totalQty} from ${fromLoc.name} to ${toLoc.name}`,
-      { product_id, from_location_id, to_location_id, allocations },
-      req.ip
-    );
+    await createLog(req.user?.id, 'StockMovement', 'create', movement.id, `Manual transfer: ${product.name} x${totalQty} from ${fromLoc.name} to ${toLoc.name}`, { product_id: finalProductId, from_location_id: finalFromLocationId, to_location_id: finalToLocationId, quantity: totalQty }, req.ip);
 
-    res.status(201).json({
-      success: true,
-      message: 'Stock transferred with manual batch selection',
-      data: {
-        movement_id: movement.id,
-        product: product.name,
-        from_location: fromLoc.name,
-        to_location: toLoc.name,
-        quantity: totalQty,
-        allocations,
-        total_cost: totalCost,
-      },
-    });
+    res.status(201).json({ success: true, message: 'Transfer created', data: { movement_id: movement.id, quantity: totalQty, allocations } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

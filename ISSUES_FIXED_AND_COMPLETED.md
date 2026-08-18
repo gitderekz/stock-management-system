@@ -31,7 +31,7 @@ Status: 500 Internal Server Error
 # Login endpoint now works
 curl -X POST http://localhost:3000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"password"}'
+  -d '{"email":"admin@example.com","password":"Admin1234!"}'
 
 # Response: 200 OK with JWT token ✅
 {
@@ -202,7 +202,7 @@ Administration
 ### Admin Account
 ```
 Email: admin@example.com
-Password: password
+Password: Admin1234!
 Role: admin (Full access to all features)
 ```
 

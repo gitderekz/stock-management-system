@@ -9,6 +9,7 @@ const stockInController = require('../controllers/stockInController');
 const stockOutController = require('../controllers/stockOutController');
 const stockTransferController = require('../controllers/stockTransferController');
 // Legacy stock controller
+const stockController = require('../controllers/stockController');
 const { createTransfer, createDamage, createReturn, listMovements } = require('../controllers/stockController');
 const { listCategories, createCategory, updateCategory, deleteCategory } = require('../controllers/categoriesController');
 const { listBrands, createBrand, updateBrand, deleteBrand } = require('../controllers/brandsController');
@@ -98,6 +99,8 @@ router.post('/stock/transfer', protect, requirePermission('stock_transfer.manage
 router.post('/stock/transfer/manual', protect, requirePermission('stock_transfer.manage'), stockTransferController.createTransferManual);
 
 // ===== LEGACY STOCK OPERATIONS (kept for compatibility) =====
+router.get('/stock/damage', protect, stockController.listDamagedStock);
+router.get('/stock/return', protect, stockController.listStockReturns);
 router.post('/stock/damage', protect, requirePermission('stock.damage'), createDamage);
 router.post('/stock/return', protect, requirePermission('stock.return'), createReturn);
 

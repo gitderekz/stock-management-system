@@ -1,28 +1,44 @@
-const { StockMovement, StockBatch, Product, Location, PurchaseOrder, PurchaseOrderItem, User } = require('../models');
+const { Op } = require('sequelize');
+const { StockMovement, StockBatch, Product, Location, PurchaseOrder, PurchaseOrderItem, User, StockIn, StockInItem, Supplier } = require('../models');
 const { createLog } = require('./logsController');
 const { v4: uuidv4 } = require('uuid');
 
-// List all stock in movements
+// List all stock in receipts
 const listStockIn = async (req, res) => {
   try {
-    const movements = await StockMovement.findAll({
-      where: { type: 'in' },
+    const receipts = await StockIn.findAll({
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name'] },
-        { model: Location, as: 'to_location', attributes: ['id', 'name'] },
-        { model: User, as: 'issuer', attributes: ['id', 'fullName'] },
+        { model: PurchaseOrder, as: 'purchaseOrder', attributes: ['id', 'po_number'] },
+        { model: Location, as: 'location', attributes: ['id', 'name'] },
+        { model: User, as: 'receiver', attributes: ['id', 'fullName', 'email'] },
+        { model: Supplier, as: 'supplier', attributes: ['id', 'name'] },
+        {
+          model: StockInItem,
+          as: 'items',
+          attributes: ['id', 'product_id', 'quantity', 'unit_price'],
+          include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'sku'] }],
+        },
       ],
       order: [['createdAt', 'DESC']],
     });
 
-    const data = movements.map(m => ({
-      id: m.id,
-      product: m.product?.name || 'Unknown',
-      quantity: m.quantity,
-      location: m.to_location?.name || 'Unknown',
-      reference: m.reference,
-      received_by: m.issuer?.fullName || 'System',
-      received_at: m.createdAt,
+    const data = receipts.map(r => ({
+      id: r.id,
+      reference_number: r.reference_no,
+      purchase_order_id: r.purchase_order_id,
+      purchaseOrder: r.purchaseOrder ? { id: r.purchaseOrder.id, po_number: r.purchaseOrder.po_number } : null,
+      supplier: r.supplier ? { id: r.supplier.id, name: r.supplier.name } : null,
+      location: r.location ? { id: r.location.id, name: r.location.name } : null,
+      receiver: r.receiver ? { id: r.receiver.id, fullName: r.receiver.fullName, email: r.receiver.email } : null,
+      items: r.items || [],
+      items_count: (r.items || []).length,
+      total_cost: Number(r.total_cost || 0),
+      status: r.status,
+      received_by: r.receiver?.fullName || 'System',
+      received_date: r.receipt_date || r.createdAt,
+      created_at: r.createdAt,
+      notes: r.notes,
+      location_id: r.location_id,
     }));
 
     res.json({ success: true, data, pagination: { total: data.length } });
@@ -34,19 +50,40 @@ const listStockIn = async (req, res) => {
 // Get single stock in
 const getStockIn = async (req, res) => {
   try {
-    const movement = await StockMovement.findByPk(req.params.id, {
+    const stockIn = await StockIn.findByPk(req.params.id, {
       include: [
-        { model: Product, as: 'product' },
-        { model: Location, as: 'to_location' },
-        { model: User, as: 'issuer' },
+        { model: PurchaseOrder, as: 'purchaseOrder', attributes: ['id', 'po_number', 'order_date'] },
+        { model: Location, as: 'location', attributes: ['id', 'name'] },
+        { model: User, as: 'receiver', attributes: ['id', 'fullName', 'email'] },
+        {
+          model: StockInItem,
+          as: 'items',
+          include: [
+            { model: Product, as: 'product', attributes: ['id', 'name', 'sku'] },
+          ],
+        },
       ],
     });
 
-    if (!movement || movement.type !== 'in') {
-      return res.status(404).json({ success: false, message: 'Stock in not found' });
+    if (!stockIn) {
+      return res.status(404).json({ success: false, message: 'Stock-in record not found' });
     }
 
-    res.json({ success: true, data: movement });
+    const data = {
+      ...stockIn.toJSON(),
+      purchased_order: stockIn.purchaseOrder ? { id: stockIn.purchaseOrder.id, po_number: stockIn.purchaseOrder.po_number } : null,
+      purchaseOrder: stockIn.purchaseOrder ? { id: stockIn.purchaseOrder.id, po_number: stockIn.purchaseOrder.po_number } : null,
+      location: stockIn.location ? { id: stockIn.location.id, name: stockIn.location.name } : null,
+      receiver: stockIn.receiver ? { id: stockIn.receiver.id, fullName: stockIn.receiver.fullName, email: stockIn.receiver.email } : null,
+      received_by: stockIn.receiver?.fullName || 'System',
+      received_date: stockIn.receipt_date || stockIn.createdAt,
+      items: (stockIn.items || []).map((item) => ({
+        ...item.toJSON ? item.toJSON() : item,
+        product: item.product ? { id: item.product.id, name: item.product.name, sku: item.product.sku } : null,
+      })),
+    };
+
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -86,6 +123,7 @@ const receiveGoods = async (req, res) => {
         product_id: i.product_id,
         quantity_received: parseInt(i.quantity_received, 10) || 0,
         unit_cost: i.unit_cost !== undefined ? parseFloat(i.unit_cost) : undefined,
+        unit_selling_price: i.unit_selling_price !== undefined ? parseFloat(i.unit_selling_price) : undefined,
         landed_cost: i.landed_cost !== undefined ? parseFloat(i.landed_cost) : undefined,
       }));
     } else if (po) {
@@ -94,13 +132,31 @@ const receiveGoods = async (req, res) => {
         product_id: i.product_id,
         quantity_received: i.quantity,
         unit_cost: parseFloat(i.unit_cost),
+        unit_selling_price: i.unit_selling_price !== undefined ? parseFloat(i.unit_selling_price) : undefined,
         landed_cost: i.landed_cost ? parseFloat(i.landed_cost) : parseFloat(i.unit_cost),
       }));
     } else {
       return res.status(400).json({ success: false, message: 'No items to receive. Provide purchase_order_id or items array.' });
     }
 
+    const entityUserId = received_by || req.user?.id || null;
+    const stockInReference = `GR-${Date.now()}`;
     const createdBatches = [];
+
+    const stockIn = await StockIn.create({
+      supplier_id: po?.supplier_id || null,
+      purchase_order_id: purchase_order_id || null,
+      reference_no: stockInReference,
+      invoice_no: po?.po_number || null,
+      location_id: location_id,
+      user_id: entityUserId,
+      receipt_date: new Date(),
+      notes: inspection_notes || null,
+      total_cost: 0,
+      status: 'RECEIVED',
+    });
+
+    let stockInTotal = 0;
 
     for (const entry of receiveList) {
       if (!entry.product_id || !entry.quantity_received || entry.quantity_received <= 0) continue;
@@ -108,7 +164,10 @@ const receiveGoods = async (req, res) => {
       const product = await Product.findByPk(entry.product_id);
       if (!product) continue; // skip missing product
 
-      // Generate batch number using uuid fragment to avoid collisions
+      const unitCost = entry.unit_cost !== undefined ? parseFloat(entry.unit_cost) : (product.cost || 0);
+      const sellingPrice = entry.unit_selling_price !== undefined ? parseFloat(entry.unit_selling_price) : (product.selling_price || product.price || 0);
+      const landedCost = entry.landed_cost !== undefined ? parseFloat(entry.landed_cost) : (unitCost || 0);
+
       const batch_number = `${product.name.substring(0,4).toUpperCase()}-${location.name.substring(0,4).toUpperCase()}-${uuidv4().split('-')[0]}`;
 
       const batch = await StockBatch.create({
@@ -118,31 +177,57 @@ const receiveGoods = async (req, res) => {
         purchase_order_id: purchase_order_id || null,
         quantity_received: parseInt(entry.quantity_received, 10),
         quantity_remaining: parseInt(entry.quantity_received, 10),
-        unit_cost: entry.unit_cost !== undefined ? parseFloat(entry.unit_cost) : (product.cost || 0),
-        unit_selling_price: 0,
-        landed_cost: entry.landed_cost !== undefined ? parseFloat(entry.landed_cost) : (entry.unit_cost !== undefined ? parseFloat(entry.unit_cost) : 0),
+        unit_cost: unitCost,
+        unit_selling_price: sellingPrice,
+        landed_cost: landedCost,
         condition: 'new',
         received_at: new Date(),
-        received_by: received_by || req.user?.id || null,
+        received_by: entityUserId,
         inspection_notes: inspection_notes || null,
+        notes: `Received from PO ${po?.po_number || 'manual stock in'}`,
       });
 
-      // create stock movement
-      const movement = await StockMovement.create({
+      await StockInItem.create({
+        stock_in_id: stockIn.id,
+        product_id: entry.product_id,
+        quantity: parseInt(entry.quantity_received, 10),
+        unit_price: unitCost,
+        condition: 'new',
+        batch_no: batch.batch_number,
+        warranty_information: inspection_notes || null,
+      });
+
+      stockInTotal += (unitCost || 0) * parseInt(entry.quantity_received, 10);
+
+      const allocations = [{
+        batch_id: batch.id,
+        batch_number: batch.batch_number,
+        quantity: parseInt(entry.quantity_received, 10),
+        product_id: entry.product_id,
+        location_id,
+      }];
+
+      await StockMovement.create({
         type: 'in',
         product_id: entry.product_id,
         from_location_id: null,
         to_location_id: location_id,
+        location_id,
         quantity: parseInt(entry.quantity_received, 10),
-        unit_cost: batch.unit_cost || 0,
-        total_cost: (batch.unit_cost || 0) * parseInt(entry.quantity_received, 10),
-        purpose: purchase_order_id ? `PO Delivery (${po.po_number})` : 'Stock In',
-        reference: purchase_order_id ? po.po_number : null,
-        issued_by: received_by || req.user?.id || null,
+        unit_cost: unitCost,
+        total_cost: unitCost * parseInt(entry.quantity_received, 10),
+        purpose: purchase_order_id ? `PO Receipt (${po.po_number})` : 'Stock In',
+        reference: purchase_order_id ? po.po_number : stockInReference,
+        issued_by: entityUserId,
+        created_by: entityUserId,
+        batch_allocations: allocations,
+        reason: inspection_notes || 'Goods received from purchase order',
         notes: `Batch ${batch_number} created from receive`,
       });
 
-      createdBatches.push({ batch, movement });
+      await syncProductQuantity(entry.product_id);
+
+      createdBatches.push({ batch });
 
       await createLog(
         req.user?.id,
@@ -155,7 +240,8 @@ const receiveGoods = async (req, res) => {
       );
     }
 
-    // Update PO delivery status if PO provided
+    await stockIn.update({ total_cost: stockInTotal, status: 'RECEIVED' });
+
     if (po) {
       const totalOrdered = (po.items || []).reduce((s, it) => s + (it.quantity || 0), 0);
       const totalReceivedRows = await StockBatch.findAll({ where: { purchase_order_id: po.id } });
@@ -169,7 +255,7 @@ const receiveGoods = async (req, res) => {
       await po.update({ delivery_status: newDeliveryStatus, actual_delivery: new Date() });
     }
 
-    res.status(201).json({ success: true, message: 'Goods received', data: { batches: createdBatches.map(b => ({ id: b.batch.id, batch_number: b.batch.batch_number })) } });
+    res.status(201).json({ success: true, message: 'Goods received', data: { stock_in_id: stockIn.id, batches: createdBatches.map(b => ({ id: b.batch.id, batch_number: b.batch.batch_number })) } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -210,19 +296,22 @@ const updateBatchDetails = async (req, res) => {
 // List batches for a product/location
 const listBatches = async (req, res) => {
   try {
-    const { product_id, location_id, include_empty } = req.query;
+    const { product_id, productId, location_id, locationId, include_empty } = req.query;
 
     const where = {};
-    if (product_id) where.product_id = product_id;
-    if (location_id) where.location_id = location_id;
-    if (!include_empty) where.quantity_remaining = { [require('../models').sequelize.Op.gt]: 0 };
+    const finalProductId = product_id || productId;
+    const finalLocationId = location_id || locationId;
+
+    if (finalProductId) where.product_id = finalProductId;
+    if (finalLocationId) where.location_id = finalLocationId;
+    if (!include_empty) where.quantity_remaining = { [Op.gt]: 0 };
 
     const batches = await StockBatch.findAll({
       where,
       include: [
         { model: Product, as: 'product', attributes: ['id', 'name'] },
         { model: Location, as: 'location', attributes: ['id', 'name'] },
-        { model: PurchaseOrder, as: 'purchase_order', attributes: ['id', 'po_number'] },
+        { model: PurchaseOrder, as: 'purchaseOrder', attributes: ['id', 'po_number'] },
       ],
       order: [['received_at', 'ASC']],
     });
@@ -255,7 +344,7 @@ const getBatchDetails = async (req, res) => {
       include: [
         { model: Product, as: 'product' },
         { model: Location, as: 'location' },
-        { model: PurchaseOrder, as: 'purchase_order' },
+        { model: PurchaseOrder, as: 'purchaseOrder' },
       ],
     });
 
@@ -269,6 +358,33 @@ const getBatchDetails = async (req, res) => {
   }
 };
 
+const syncProductQuantity = async (productId) => {
+  if (!productId) return null;
+
+  const product = await Product.findByPk(productId);
+  if (!product) return null;
+
+  const batches = await StockBatch.findAll({
+    where: { product_id: productId },
+    attributes: ['quantity_remaining', 'unit_cost'],
+  });
+
+  const totalAvailable = batches.reduce((sum, batch) => sum + Number(batch.quantity_remaining || 0), 0);
+  const latestUnitCost = batches
+    .map(batch => Number(batch.unit_cost || 0))
+    .filter(value => value > 0)
+    .sort((a, b) => b - a)[0];
+
+  const priceUpdate = Number(product.price || 0) <= 0 && latestUnitCost > 0 ? { price: latestUnitCost } : {};
+
+  await product.update({
+    quantity: totalAvailable,
+    ...priceUpdate,
+  });
+
+  return product;
+};
+
 module.exports = {
   listStockIn,
   getStockIn,
@@ -276,4 +392,5 @@ module.exports = {
   updateBatchDetails,
   listBatches,
   getBatchDetails,
+  syncProductQuantity,
 };

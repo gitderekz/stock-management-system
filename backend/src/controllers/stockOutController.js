@@ -1,6 +1,7 @@
-const { StockMovement, StockBatch, Product, Location, User } = require('../models');
+const { StockMovement, StockBatch, Product, Location, User, StockOut, StockOutItem } = require('../models');
 const { createLog } = require('./logsController');
 const { sequelize } = require('../models');
+const { Op } = require('sequelize');
 
 // FIFO Allocation Algorithm
 const allocateWithFIFO = async (productId, locationId, requestedQty) => {
@@ -9,10 +10,10 @@ const allocateWithFIFO = async (productId, locationId, requestedQty) => {
     where: { 
       product_id: productId, 
       location_id: locationId,
-      quantity_remaining: { [sequelize.Op.gt]: 0 } // Only non-empty batches
+      quantity_remaining: { [Op.gt]: 0 } // Only non-empty batches
     },
     order: [['received_at', 'ASC']],
-    attributes: ['id', 'batch_number', 'quantity_remaining', 'unit_cost', 'received_at'],
+    attributes: ['id', 'batch_number', 'quantity_remaining', 'unit_cost', 'unit_selling_price', 'received_at'],
   });
 
   if (batches.length === 0) {
@@ -25,24 +26,21 @@ const allocateWithFIFO = async (productId, locationId, requestedQty) => {
   for (const batch of batches) {
     if (remainingQty <= 0) break;
 
-    // How much to take from this batch
     const qtyToTake = Math.min(remainingQty, batch.quantity_remaining);
+    const unitPrice = Number(batch.unit_selling_price ?? batch.unit_cost ?? 0);
 
-    // Record allocation
     allocations.push({
       batch_id: batch.id,
       batch_number: batch.batch_number,
       quantity: qtyToTake,
-      unit_cost: batch.unit_cost,
-      total_cost: parseFloat(batch.unit_cost) * qtyToTake,
+      unit_cost: unitPrice,
+      total_cost: parseFloat(unitPrice) * qtyToTake,
     });
 
-    // Update batch
     await batch.update({
       quantity_remaining: batch.quantity_remaining - qtyToTake,
     });
 
-    // Reduce requested
     remainingQty -= qtyToTake;
   }
 
@@ -73,12 +71,13 @@ const allocateManual = async (productId, locationId, batchAllocations) => {
       );
     }
 
+    const unitPrice = Number(batch.unit_selling_price ?? batch.unit_cost ?? 0);
     allocations.push({
       batch_id: batch.id,
       batch_number: batch.batch_number,
       quantity: ba.quantity,
-      unit_cost: batch.unit_cost,
-      total_cost: parseFloat(batch.unit_cost) * ba.quantity,
+      unit_cost: unitPrice,
+      total_cost: parseFloat(unitPrice) * ba.quantity,
     });
 
     await batch.update({
@@ -91,28 +90,31 @@ const allocateManual = async (productId, locationId, batchAllocations) => {
   return allocations;
 };
 
-// List all stock movements (issues)
+// List all stock out records from the dedicated stock_out table
 const listStockOut = async (req, res) => {
   try {
-    const movements = await StockMovement.findAll({
-      where: { type: 'out' },
+    const rows = await StockOut.findAll({
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name'] },
-        { model: Location, as: 'from_location', attributes: ['id', 'name'] },
+        { model: StockOutItem, as: 'items', include: [{ model: Product, as: 'product', attributes: ['id', 'name'] }] },
+        { model: Location, as: 'location', attributes: ['id', 'name'] },
         { model: User, as: 'issuer', attributes: ['id', 'fullName'] },
       ],
-      order: [['createdAt', 'DESC']],
+      order: [['issuedAt', 'DESC']],
     });
 
-    const data = movements.map(m => ({
-      id: m.id,
-      product: m.product?.name || 'Unknown',
-      quantity: m.quantity,
-      location: m.from_location?.name || 'Unknown',
-      purpose: m.purpose,
-      reference: m.reference,
-      issued_by: m.issuer?.fullName || 'System',
-      issued_at: m.createdAt,
+    const data = rows.map((row) => ({
+      id: row.id,
+      reference: row.referenceNo,
+      product: row.items?.[0]?.product?.name || 'Unknown',
+      quantity: row.items?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0,
+      location_id: row.locationId,
+      location: row.location?.name || 'Unknown',
+      purpose: row.purpose,
+      recipient: row.recipient,
+      issued_by: row.issuer?.fullName || 'System',
+      issued_at: row.issuedAt || row.createdAt,
+      status: row.status,
+      created_at: row.createdAt,
     }));
 
     res.json({ success: true, data, pagination: { total: data.length } });
@@ -121,22 +123,22 @@ const listStockOut = async (req, res) => {
   }
 };
 
-// Get single stock out with allocations
+// Get single stock out from stock_out table
 const getStockOut = async (req, res) => {
   try {
-    const movement = await StockMovement.findByPk(req.params.id, {
+    const row = await StockOut.findByPk(req.params.id, {
       include: [
-        { model: Product, as: 'product' },
-        { model: Location, as: 'from_location' },
+        { model: StockOutItem, as: 'items', include: [{ model: Product, as: 'product' }] },
+        { model: Location, as: 'location' },
         { model: User, as: 'issuer' },
       ],
     });
 
-    if (!movement || movement.type !== 'out') {
+    if (!row) {
       return res.status(404).json({ success: false, message: 'Stock out not found' });
     }
 
-    res.json({ success: true, data: movement });
+    res.json({ success: true, data: row });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -170,28 +172,52 @@ const createStockOut = async (req, res) => {
     // Calculate total cost from allocations
     const totalCost = allocations.reduce((sum, a) => sum + a.total_cost, 0);
 
+    // Create stock out record
+    const stockOut = await StockOut.create({
+      referenceNo: reference || `SO-${Date.now()}`,
+      recipient: purpose || 'General issue',
+      locationId: location_id,
+      purpose,
+      userId: req.user?.id || null,
+      issuedAt: new Date(),
+      notes: purpose || null,
+      status: 'ISSUED',
+    });
+
+    await StockOutItem.create({
+      stockOutId: stockOut.id,
+      productId: product_id,
+      quantity,
+      serialNumber: reference || null,
+    });
+
     // Create stock movement record
     const movement = await StockMovement.create({
       type: 'out',
       product_id,
       from_location_id: location_id,
       to_location_id: null,
+      location_id,
       quantity,
-      unit_cost: totalCost / quantity, // Average cost
+      unit_cost: totalCost / quantity,
       total_cost: totalCost,
-      purpose: purpose || 'Sales',
-      reference: reference || null,
+      purpose: purpose || 'Stock out',
+      reference: reference || stockOut.reference_no,
       issued_by: req.user?.id || null,
-      batch_allocations: JSON.stringify(allocations), // Store allocations for traceability
-      notes: allocation_method === 'FIFO' ? 'Allocated using FIFO method' : null,
+      created_by: req.user?.id || null,
+      batch_allocations: JSON.stringify(allocations),
+      reason: purpose || 'Stock issued',
+      notes: `Stock out record created for ${product.name}`,
     });
+
+    await syncProductQuantity(product_id);
 
     await createLog(
       req.user?.id,
-      'StockMovement',
+      'StockOut',
       'create',
-      movement.id,
-      `Stock out: ${product.name} x${quantity}`,
+      stockOut.id,
+      `Stock out created: ${product.name} x${quantity}`,
       { product_id, location_id, quantity, allocations },
       req.ip
     );
@@ -201,6 +227,7 @@ const createStockOut = async (req, res) => {
       message: 'Stock out created with FIFO allocation',
       data: {
         movement_id: movement.id,
+        stock_out_id: stockOut.id,
         product: product.name,
         quantity,
         allocations,
@@ -252,6 +279,8 @@ const createStockOutManual = async (req, res) => {
       notes: 'Allocated using manual method (user selected batches)',
     });
 
+    await syncProductQuantity(product_id);
+
     await createLog(
       req.user?.id,
       'StockMovement',
@@ -294,10 +323,10 @@ const getAvailableBatches = async (req, res) => {
       where: {
         product_id,
         location_id,
-        quantity_remaining: { [sequelize.Op.gt]: 0 },
+        quantity_remaining: { [Op.gt]: 0 },
       },
       order: [['received_at', 'ASC']],
-      attributes: ['id', 'batch_number', 'quantity_remaining', 'unit_cost', 'received_at', 'condition'],
+      attributes: ['id', 'batch_number', 'quantity_remaining', 'unit_cost', 'unit_selling_price', 'received_at', 'condition'],
     });
 
     const data = batches.map(b => ({
@@ -305,6 +334,7 @@ const getAvailableBatches = async (req, res) => {
       batch_number: b.batch_number,
       quantity_available: b.quantity_remaining,
       unit_cost: b.unit_cost,
+      unit_selling_price: b.unit_selling_price,
       received_at: b.received_at,
       condition: b.condition,
     }));
@@ -315,6 +345,34 @@ const getAvailableBatches = async (req, res) => {
   }
 };
 
+// Keep product inventory in sync with actual batch consumption
+const syncProductQuantity = async (productId) => {
+  if (!productId) return null;
+
+  const product = await Product.findByPk(productId);
+  if (!product) return null;
+
+  const batches = await StockBatch.findAll({
+    where: { product_id: productId },
+    attributes: ['quantity_remaining', 'unit_cost'],
+  });
+
+  const totalAvailable = batches.reduce((sum, batch) => sum + Number(batch.quantity_remaining || 0), 0);
+  const latestUnitCost = batches
+    .map(batch => Number(batch.unit_cost || 0))
+    .filter(value => value > 0)
+    .sort((a, b) => b - a)[0];
+
+  const priceUpdate = Number(product.price || 0) <= 0 && latestUnitCost > 0 ? { price: latestUnitCost } : {};
+
+  await product.update({
+    quantity: totalAvailable,
+    ...priceUpdate,
+  });
+
+  return product;
+};
+
 module.exports = {
   listStockOut,
   getStockOut,
@@ -323,4 +381,5 @@ module.exports = {
   getAvailableBatches,
   allocateWithFIFO,
   allocateManual,
+  syncProductQuantity,
 };

@@ -120,12 +120,13 @@ const StockOutPage = () => {
       );
 
       if (qtyToTake > 0) {
-        const batchCost = qtyToTake * (batch.unit_cost || 0);
+        const unitPrice = Number(batch.unit_selling_price ?? batch.unit_cost ?? 0);
+        const batchCost = qtyToTake * unitPrice;
         allocation.push({
           batchId: batch.id,
           batchNumber: batch.batch_number,
           quantity: qtyToTake,
-          unitCost: batch.unit_cost || 0,
+          unitCost: unitPrice,
           totalCost: batchCost,
           receivedAt: batch.received_at,
           expiresAt: batch.expires_at,
@@ -570,7 +571,7 @@ const StockOutPage = () => {
                           <div>Received: {new Date(batch.received_at).toLocaleDateString()}</div>
                           <div>
                             Available: {batch.quantity_remaining} units @ TZS{' '}
-                            {Number(batch.unit_cost || 0).toLocaleString()}/unit
+                            {Number(batch.unit_selling_price ?? batch.unit_cost ?? 0).toLocaleString()}/unit
                           </div>
                           <div>Condition: {batch.condition}</div>
                         </div>
@@ -610,8 +611,8 @@ const StockOutPage = () => {
                       <th>Received</th>
                       <th>Condition</th>
                       <th>Qty</th>
-                      <th>Unit Cost</th>
-                      <th>Total Cost</th>
+                      <th>Unit Selling Price</th>
+                      <th>Total Value</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -632,7 +633,15 @@ const StockOutPage = () => {
                     ))}
                   </tbody>
                 </table>
-                <div className="info-grid">
+                <div
+                  className="info-grid"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: '16px 20px',
+                    marginTop: '18px',
+                  }}
+                >
                   <div className="info-item">
                     <label>Total Allocated</label>
                     <div className="font-large font-weight-bold">
@@ -640,7 +649,7 @@ const StockOutPage = () => {
                     </div>
                   </div>
                   <div className="info-item">
-                    <label>Total Cost (FIFO)</label>
+                    <label>Total Value (FIFO)</label>
                     <div className="font-large font-weight-bold">
                       TZS{' '}
                       {Number(

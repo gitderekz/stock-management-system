@@ -26,6 +26,11 @@ const StockMovement = sequelize.define('StockMovement', {
     references: { model: 'locations', key: 'id' },
     allowNull: true,
   },
+  location_id: {
+    type: DataTypes.INTEGER,
+    references: { model: 'locations', key: 'id' },
+    allowNull: true,
+  },
   quantity: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -49,6 +54,11 @@ const StockMovement = sequelize.define('StockMovement', {
     allowNull: true,
   },
   issued_by: {
+    type: DataTypes.INTEGER,
+    references: { model: 'users', key: 'id' },
+    allowNull: true,
+  },
+  created_by: {
     type: DataTypes.INTEGER,
     references: { model: 'users', key: 'id' },
     allowNull: true,

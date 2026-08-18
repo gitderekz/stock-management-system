@@ -7,7 +7,7 @@ const LoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('admin@example.com');
-  const [password, setPassword] = useState('password');
+  const [password, setPassword] = useState('Admin1234!');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -89,11 +89,11 @@ const LoginPage = () => {
           <div className="demo-label">Demo Credentials</div>
           <div className="demo-item">
             <div className="demo-role">Admin</div>
-            <div className="demo-email">admin@example.com / password</div>
+            <div className="demo-email">admin@example.com / Admin1234!</div>
           </div>
           <div className="demo-item">
             <div className="demo-role">Stock Manager</div>
-            <div className="demo-email">stock@example.com / password</div>
+            <div className="demo-email">stock@example.com / Stock1234!</div>
           </div>
         </div>
       </div>

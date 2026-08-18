@@ -125,9 +125,21 @@ const StockInPage = () => {
 const StockOutPage = () => {
   const { token } = useAuth();
   const { products, locations, error } = useStockOptions(token);
+  const [records, setRecords] = useState([]);
   const [form, setForm] = useState({ productId: '', locationId: '', quantity: 0, destination: '', notes: '' });
   const [message, setMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+
+  const loadRecords = async () => {
+    try {
+      const response = await apiGet('/stock/out', token);
+      setRecords(response.data || []);
+    } catch (err) {
+      setSubmitError(err.message);
+    }
+  };
+
+  useEffect(() => { loadRecords(); }, [token]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -138,15 +150,17 @@ const StockOutPage = () => {
     event.preventDefault();
     try {
       await apiPost('/stock/out', {
-        productId: form.productId,
-        locationId: form.locationId,
-        quantity: form.quantity,
-        destination: form.destination,
+        product_id: Number(form.productId),
+        location_id: Number(form.locationId),
+        quantity: Number(form.quantity),
+        purpose: form.notes || 'Stock out',
+        reference: form.destination || undefined,
         reason: form.notes,
       }, token);
       setMessage('Stock issued successfully.');
       setSubmitError('');
       setForm({ productId: '', locationId: '', quantity: 0, destination: '', notes: '' });
+      loadRecords();
     } catch (err) {
       setSubmitError(err.message);
       setMessage('');
@@ -165,6 +179,36 @@ const StockOutPage = () => {
         {message && <div className="alert alert-success">{message}</div>}
         {submitError && <div className="alert alert-danger">{submitError}</div>}
         {error && <div className="alert alert-danger">{error}</div>}
+
+        <table className="table" style={{ marginBottom: '20px' }}>
+          <thead>
+            <tr>
+              <th>Reference</th>
+              <th>Product</th>
+              <th>Location</th>
+              <th>Qty</th>
+              <th>Purpose</th>
+              <th>Issued By</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.length ? records.map((record) => (
+              <tr key={record.id}>
+                <td>{record.reference || `SO-${record.id}`}</td>
+                <td>{record.product || 'Unknown'}</td>
+                <td>{record.location || 'Unknown'}</td>
+                <td>{record.quantity || 0}</td>
+                <td>{record.purpose || 'Stock out'}</td>
+                <td>{record.issued_by || 'System'}</td>
+                <td>{record.issued_at ? new Date(record.issued_at).toLocaleDateString() : '—'}</td>
+              </tr>
+            )) : (
+              <tr><td colSpan="7" className="empty-row">No stock-out records found.</td></tr>
+            )}
+          </tbody>
+        </table>
+
         <form className="form-grid" onSubmit={submitStockOut}>
           <div className="field-group">
             <label className="field-label">Product</label>
@@ -208,9 +252,21 @@ const StockOutPage = () => {
 const StockTransferPage = () => {
   const { token } = useAuth();
   const { products, locations, error } = useStockOptions(token);
+  const [records, setRecords] = useState([]);
   const [form, setForm] = useState({ productId: '', sourceLocationId: '', destinationLocationId: '', quantity: 0, reference: '' });
   const [message, setMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+
+  const loadRecords = async () => {
+    try {
+      const response = await apiGet('/stock/transfer', token);
+      setRecords(response.data || []);
+    } catch (err) {
+      setSubmitError(err.message);
+    }
+  };
+
+  useEffect(() => { loadRecords(); }, [token]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -221,15 +277,16 @@ const StockTransferPage = () => {
     event.preventDefault();
     try {
       await apiPost('/stock/transfer', {
-        productId: form.productId,
-        sourceLocationId: form.sourceLocationId,
-        destinationLocationId: form.destinationLocationId,
-        quantity: form.quantity,
-        referenceNo: form.reference,
+        product_id: Number(form.productId),
+        from_location_id: Number(form.sourceLocationId),
+        to_location_id: Number(form.destinationLocationId),
+        quantity: Number(form.quantity),
+        reference: form.reference,
       }, token);
       setMessage('Transfer created successfully.');
       setSubmitError('');
       setForm({ productId: '', sourceLocationId: '', destinationLocationId: '', quantity: 0, reference: '' });
+      loadRecords();
     } catch (err) {
       setSubmitError(err.message);
       setMessage('');
@@ -248,6 +305,36 @@ const StockTransferPage = () => {
         {message && <div className="alert alert-success">{message}</div>}
         {submitError && <div className="alert alert-danger">{submitError}</div>}
         {error && <div className="alert alert-danger">{error}</div>}
+
+        <table className="table" style={{ marginBottom: '20px' }}>
+          <thead>
+            <tr>
+              <th>Reference</th>
+              <th>Product</th>
+              <th>From</th>
+              <th>To</th>
+              <th>Qty</th>
+              <th>By</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.length ? records.map((record) => (
+              <tr key={record.id}>
+                <td>{record.reference || `TR-${record.id}`}</td>
+                <td>{record.product || 'Unknown'}</td>
+                <td>{record.from_location || 'Unknown'}</td>
+                <td>{record.to_location || 'Unknown'}</td>
+                <td>{record.quantity || 0}</td>
+                <td>{record.transferred_by || 'System'}</td>
+                <td>{record.transferred_at ? new Date(record.transferred_at).toLocaleDateString() : '—'}</td>
+              </tr>
+            )) : (
+              <tr><td colSpan="7" className="empty-row">No transfer records found.</td></tr>
+            )}
+          </tbody>
+        </table>
+
         <form className="form-grid" onSubmit={submitTransfer}>
           <div className="field-group">
             <label className="field-label">Product</label>
@@ -296,9 +383,21 @@ const StockTransferPage = () => {
 const DamagedPage = () => {
   const { token } = useAuth();
   const { products, locations, error } = useStockOptions(token);
+  const [records, setRecords] = useState([]);
   const [form, setForm] = useState({ productId: '', locationId: '', quantity: 0, reason: '' });
   const [message, setMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+
+  const loadRecords = async () => {
+    try {
+      const response = await apiGet('/stock/damage', token);
+      setRecords(response.data || []);
+    } catch (err) {
+      setSubmitError(err.message);
+    }
+  };
+
+  useEffect(() => { loadRecords(); }, [token]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -309,14 +408,15 @@ const DamagedPage = () => {
     event.preventDefault();
     try {
       await apiPost('/stock/damage', {
-        productId: form.productId,
-        locationId: form.locationId,
-        quantity: form.quantity,
+        productId: Number(form.productId),
+        locationId: Number(form.locationId),
+        quantity: Number(form.quantity),
         reason: form.reason,
       }, token);
       setMessage('Damaged stock recorded.');
       setSubmitError('');
       setForm({ productId: '', locationId: '', quantity: 0, reason: '' });
+      loadRecords();
     } catch (err) {
       setSubmitError(err.message);
       setMessage('');
@@ -335,6 +435,34 @@ const DamagedPage = () => {
         {message && <div className="alert alert-success">{message}</div>}
         {submitError && <div className="alert alert-danger">{submitError}</div>}
         {error && <div className="alert alert-danger">{error}</div>}
+
+        <table className="table" style={{ marginBottom: '20px' }}>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Location</th>
+              <th>Qty</th>
+              <th>Reason</th>
+              <th>Reported By</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.length ? records.map((record) => (
+              <tr key={record.id}>
+                <td>{record.product || 'Unknown'}</td>
+                <td>{record.location || 'Unknown'}</td>
+                <td>{record.quantity || 0}</td>
+                <td>{record.reason || '—'}</td>
+                <td>{record.reported_by || 'System'}</td>
+                <td>{record.created_at ? new Date(record.created_at).toLocaleDateString() : '—'}</td>
+              </tr>
+            )) : (
+              <tr><td colSpan="6" className="empty-row">No damaged stock records found.</td></tr>
+            )}
+          </tbody>
+        </table>
+
         <form className="form-grid" onSubmit={submitDamage}>
           <div className="field-group">
             <label className="field-label">Product</label>
@@ -374,9 +502,21 @@ const DamagedPage = () => {
 const ReturnsPage = () => {
   const { token } = useAuth();
   const { products, error } = useStockOptions(token);
+  const [records, setRecords] = useState([]);
   const [form, setForm] = useState({ productId: '', quantity: 0, reason: '' });
   const [message, setMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+
+  const loadRecords = async () => {
+    try {
+      const response = await apiGet('/stock/return', token);
+      setRecords(response.data || []);
+    } catch (err) {
+      setSubmitError(err.message);
+    }
+  };
+
+  useEffect(() => { loadRecords(); }, [token]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -387,13 +527,14 @@ const ReturnsPage = () => {
     event.preventDefault();
     try {
       await apiPost('/stock/return', {
-        productId: form.productId,
-        quantity: form.quantity,
+        productId: Number(form.productId),
+        quantity: Number(form.quantity),
         reason: form.reason,
       }, token);
       setMessage('Return recorded successfully.');
       setSubmitError('');
       setForm({ productId: '', quantity: 0, reason: '' });
+      loadRecords();
     } catch (err) {
       setSubmitError(err.message);
       setMessage('');
@@ -412,6 +553,32 @@ const ReturnsPage = () => {
         {message && <div className="alert alert-success">{message}</div>}
         {submitError && <div className="alert alert-danger">{submitError}</div>}
         {error && <div className="alert alert-danger">{error}</div>}
+
+        <table className="table" style={{ marginBottom: '20px' }}>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Qty</th>
+              <th>Reason</th>
+              <th>Created By</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.length ? records.map((record) => (
+              <tr key={record.id}>
+                <td>{record.product || 'Unknown'}</td>
+                <td>{record.quantity || 0}</td>
+                <td>{record.reason || '—'}</td>
+                <td>{record.created_by || 'System'}</td>
+                <td>{record.created_at ? new Date(record.created_at).toLocaleDateString() : '—'}</td>
+              </tr>
+            )) : (
+              <tr><td colSpan="5" className="empty-row">No return records found.</td></tr>
+            )}
+          </tbody>
+        </table>
+
         <form className="form-grid" onSubmit={submitReturn}>
           <div className="field-group">
             <label className="field-label">Product</label>
