@@ -102,20 +102,27 @@ const listStockOut = async (req, res) => {
       order: [['issuedAt', 'DESC']],
     });
 
-    const data = rows.map((row) => ({
-      id: row.id,
-      reference: row.referenceNo,
-      product: row.items?.[0]?.product?.name || 'Unknown',
-      quantity: row.items?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0,
-      location_id: row.locationId,
-      location: row.location?.name || 'Unknown',
-      purpose: row.purpose,
-      recipient: row.recipient,
-      issued_by: row.issuer?.fullName || 'System',
-      issued_at: row.issuedAt || row.createdAt,
-      status: row.status,
-      created_at: row.createdAt,
-    }));
+    const data = rows.map((row) => {
+      const itemTotal = (row.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+      const fifoValue = (row.items || []).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+
+      return {
+        id: row.id,
+        reference: row.referenceNo,
+        product: row.items?.[0]?.product?.name || 'Unknown',
+        product_id: row.items?.[0]?.productId || null,
+        quantity: itemTotal,
+        location_id: row.locationId,
+        location: row.location?.name || 'Unknown',
+        purpose: row.purpose,
+        recipient: row.recipient,
+        cost_fifo: fifoValue,
+        issued_by: row.issuer?.fullName || 'System',
+        issued_at: row.issuedAt || row.createdAt,
+        status: row.status,
+        created_at: row.createdAt,
+      };
+    });
 
     res.json({ success: true, data, pagination: { total: data.length } });
   } catch (err) {
@@ -138,7 +145,18 @@ const getStockOut = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Stock out not found' });
     }
 
-    res.json({ success: true, data: row });
+    const data = {
+      ...row.toJSON(),
+      reference: row.referenceNo,
+      location: row.location ? { id: row.location.id, name: row.location.name } : null,
+      issuer: row.issuer ? { id: row.issuer.id, fullName: row.issuer.fullName } : null,
+      items: (row.items || []).map((item) => ({
+        ...item.toJSON(),
+        product: item.product ? { id: item.product.id, name: item.product.name } : null,
+      })),
+    };
+
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -187,7 +205,9 @@ const createStockOut = async (req, res) => {
     await StockOutItem.create({
       stockOutId: stockOut.id,
       productId: product_id,
+      batchId: allocations[0]?.batch_id || null,
       quantity,
+      price: totalCost / quantity,
       serialNumber: reference || null,
     });
 

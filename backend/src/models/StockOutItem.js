@@ -17,9 +17,19 @@ const StockOutItem = sequelize.define('StockOutItem', {
     allowNull: false,
     field: 'productId',
   },
+  batchId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'batchId',
+  },
   quantity: {
     type: DataTypes.INTEGER,
     allowNull: false,
+    defaultValue: 0,
+  },
+  price: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true,
     defaultValue: 0,
   },
   serialNumber: {
