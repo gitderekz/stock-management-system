@@ -18,18 +18,20 @@ const Permission = require('./Permission');
 const RolePermission = require('./RolePermission');
 const Notification = require('./Notification');
 const StockBatch = require('./StockBatch');
-const StockIn = require('./StockIn');
-const StockInItem = require('./StockInItem');
 const PurchaseOrder = require('./PurchaseOrder');
 const PurchaseOrderItem = require('./PurchaseOrderItem');
 const Tax = require('./Tax');
 const Tariff = require('./Tariff');
+const StockIn = require('./StockIn');
+const StockInItem = require('./StockInItem');
 const StockOut = require('./StockOut');
 const StockOutItem = require('./StockOutItem');
 const StockTransfer = require('./StockTransfer');
 const StockTransferItem = require('./StockTransferItem');
 const DamagedStock = require('./DamagedStock');
 const StockReturn = require('./StockReturn');
+const StockReturnItem = require('./StockReturnItem');
+const StockDamagedItem = require('./StockDamagedItem');
 
 Role.hasMany(User, { foreignKey: 'roleId', as: 'users' });
 User.belongsTo(Role, { foreignKey: 'roleId', as: 'role' });
@@ -54,9 +56,6 @@ ProductVideo.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 
 Product.hasMany(StockMovement, { foreignKey: 'product_id', as: 'stockMovements' });
 StockMovement.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
-
-Product.hasMany(StockBalance, { foreignKey: 'productId', as: 'balances' });
-StockBalance.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 
 Location.hasMany(StockBalance, { foreignKey: 'locationId', as: 'balances' });
 StockBalance.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
@@ -126,41 +125,58 @@ StockInItem.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 PurchaseOrder.hasMany(StockIn, { foreignKey: 'purchase_order_id', as: 'goodsReceipts' });
 StockIn.belongsTo(PurchaseOrder, { foreignKey: 'purchase_order_id', as: 'purchaseOrder' });
 
-// Stock operation entity relations
-Product.hasMany(StockOutItem, { foreignKey: 'productId', as: 'stockOutItems' });
-StockOutItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+// Stock operation item relations
+StockOutItem.belongsTo(StockBatch, { foreignKey: 'batchId', as: 'batch' });
+StockReturnItem.belongsTo(StockBatch, { foreignKey: 'batchId', as: 'batch' });
+StockDamagedItem.belongsTo(StockBatch, { foreignKey: 'batchId', as: 'batch' });
+
+StockReturn.hasMany(StockReturnItem, { foreignKey: 'stock_return_id', as: 'items' });
+StockReturnItem.belongsTo(StockReturn, { foreignKey: 'stock_return_id', as: 'stockReturn' });
+DamagedStock.hasMany(StockDamagedItem, { foreignKey: 'damaged_stock_id', as: 'items' });
+StockDamagedItem.belongsTo(DamagedStock, { foreignKey: 'damaged_stock_id', as: 'damagedStock' });
+
+// Stock operation item -> operation associations
 StockOut.hasMany(StockOutItem, { foreignKey: 'stockOutId', as: 'items' });
 StockOutItem.belongsTo(StockOut, { foreignKey: 'stockOutId', as: 'stockOut' });
-Location.hasMany(StockOut, { foreignKey: 'locationId', as: 'stockOuts' });
-StockOut.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
-User.hasMany(StockOut, { foreignKey: 'userId', as: 'issuedStockOuts' });
-StockOut.belongsTo(User, { foreignKey: 'userId', as: 'issuer' });
-
-User.hasMany(StockTransfer, { foreignKey: 'requestedBy', as: 'requestedTransfers' });
-StockTransfer.belongsTo(User, { foreignKey: 'requestedBy', as: 'requestedByUser' });
-
-Product.hasMany(StockTransferItem, { foreignKey: 'productId', as: 'transferItems' });
-StockTransferItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 StockTransfer.hasMany(StockTransferItem, { foreignKey: 'stockTransferId', as: 'items' });
 StockTransferItem.belongsTo(StockTransfer, { foreignKey: 'stockTransferId', as: 'stockTransfer' });
-Location.hasMany(StockTransfer, { foreignKey: 'sourceLocationId', as: 'transfersSent' });
-Location.hasMany(StockTransfer, { foreignKey: 'destinationLocationId', as: 'transfersReceived' });
-StockTransfer.belongsTo(Location, { foreignKey: 'sourceLocationId', as: 'source_location' });
-StockTransfer.belongsTo(Location, { foreignKey: 'destinationLocationId', as: 'destination_location' });
 
+// Product -> DamagedStock and StockReturn associations
 Product.hasMany(DamagedStock, { foreignKey: 'productId', as: 'damagedRecords' });
 DamagedStock.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
-Location.hasMany(DamagedStock, { foreignKey: 'locationId', as: 'damagedRecords' });
-DamagedStock.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
-User.hasMany(DamagedStock, { foreignKey: 'reportedBy', as: 'reportedDamage' });
-DamagedStock.belongsTo(User, { foreignKey: 'reportedBy', as: 'reporter' });
-
 Product.hasMany(StockReturn, { foreignKey: 'product_id', as: 'returns' });
 StockReturn.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
-Location.hasMany(StockReturn, { foreignKey: 'location_id', as: 'stockReturns' });
+
+// Product associations with item tables (for includes in list/detail endpoints)
+Product.hasMany(StockOutItem, { foreignKey: 'productId', as: 'outItems' });
+StockOutItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+Product.hasMany(StockTransferItem, { foreignKey: 'productId', as: 'transferItems' });
+StockTransferItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+
+// Location associations with operations
+Location.hasMany(DamagedStock, { foreignKey: 'locationId', as: 'damagedItems' });
+DamagedStock.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
+Location.hasMany(StockReturn, { foreignKey: 'location_id', as: 'returns' });
 StockReturn.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
-User.hasMany(StockReturn, { foreignKey: 'created_by', as: 'createdReturns' });
+
+// StockOut / StockTransfer / User associations required by page includes
+StockOut.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
+Location.hasMany(StockOut, { foreignKey: 'locationId', as: 'stockOuts' });
+StockOut.belongsTo(User, { foreignKey: 'userId', as: 'issuer' });
+User.hasMany(StockOut, { foreignKey: 'userId', as: 'stockOuts' });
+
+StockTransfer.belongsTo(Location, { foreignKey: 'sourceLocationId', as: 'source_location' });
+StockTransfer.belongsTo(Location, { foreignKey: 'destinationLocationId', as: 'destination_location' });
+Location.hasMany(StockTransfer, { foreignKey: 'sourceLocationId', as: 'sourceTransfers' });
+Location.hasMany(StockTransfer, { foreignKey: 'destinationLocationId', as: 'destinationTransfers' });
+StockTransfer.belongsTo(User, { foreignKey: 'requestedBy', as: 'requestedByUser' });
+User.hasMany(StockTransfer, { foreignKey: 'requestedBy', as: 'requestedTransfers' });
+
+DamagedStock.belongsTo(User, { foreignKey: 'reportedBy', as: 'reporter' });
+User.hasMany(DamagedStock, { foreignKey: 'reportedBy', as: 'damagedRecords' });
+
 StockReturn.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+User.hasMany(StockReturn, { foreignKey: 'created_by', as: 'stockReturns' });
 
 module.exports = {
   sequelize,
@@ -195,4 +211,6 @@ module.exports = {
   StockTransferItem,
   DamagedStock,
   StockReturn,
+  StockReturnItem,
+  StockDamagedItem,
 };

@@ -202,14 +202,17 @@ const createStockOut = async (req, res) => {
       status: 'ISSUED',
     });
 
-    await StockOutItem.create({
-      stockOutId: stockOut.id,
-      productId: product_id,
-      batchId: allocations[0]?.batch_id || null,
-      quantity,
-      price: totalCost / quantity,
-      serialNumber: reference || null,
-    });
+    // create a StockOutItem per allocation so batchId/price are preserved
+    for (const a of allocations) {
+      await StockOutItem.create({
+        stockOutId: stockOut.id,
+        productId: product_id,
+        batchId: a.batch_id || null,
+        quantity: a.quantity,
+        price: a.unit_cost || 0,
+        serialNumber: reference || null,
+      });
+    }
 
     // Create stock movement record
     const movement = await StockMovement.create({
@@ -283,6 +286,30 @@ const createStockOutManual = async (req, res) => {
     const totalQty = allocations.reduce((sum, a) => sum + a.quantity, 0);
     const totalCost = allocations.reduce((sum, a) => sum + a.total_cost, 0);
 
+    // create StockOut record
+    const stockOut = await StockOut.create({
+      referenceNo: reference || `SO-${Date.now()}`,
+      recipient: purpose || 'Manual issue',
+      locationId: location_id,
+      purpose,
+      userId: req.user?.id || null,
+      issuedAt: new Date(),
+      notes: purpose || null,
+      status: 'ISSUED',
+    });
+
+    // create StockOutItem rows for manual allocations
+    for (const a of allocations) {
+      await StockOutItem.create({
+        stockOutId: stockOut.id,
+        productId: product_id,
+        batchId: a.batch_id || null,
+        quantity: a.quantity,
+        price: a.unit_cost || 0,
+        serialNumber: reference || null,
+      });
+    }
+
     // Create stock movement record
     const movement = await StockMovement.create({
       type: 'out',
@@ -316,6 +343,7 @@ const createStockOutManual = async (req, res) => {
       message: 'Stock out created with manual allocation',
       data: {
         movement_id: movement.id,
+        stock_out_id: stockOut.id,
         product: product.name,
         quantity: totalQty,
         allocations,

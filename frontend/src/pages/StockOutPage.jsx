@@ -17,7 +17,9 @@ const initialForm = {
 const StockOutPage = () => {
   const { token, user } = useAuth();
   const modal = useModal();
+  const viewModal = useModal();
   const [stockOutRecords, setStockOutRecords] = useState([]);
+  const [viewingStockOut, setViewingStockOut] = useState(null);
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -265,6 +267,16 @@ const StockOutPage = () => {
     return matchesSearch && matchesProduct && matchesLocation && matchesPurpose && matchesMinDate && matchesMaxDate;
   });
 
+  const handleViewStockOut = async (id) => {
+    try {
+      const response = await apiGet(`/stock/out/${id}`, token);
+      setViewingStockOut(response.data || response);
+      viewModal.open();
+    } catch (err) {
+      setError(`Failed to load stock-out details: ${err.message}`);
+    }
+  };
+
   return (
     <div className="content-space">
       <section className="panel panel-dashboard-header">
@@ -401,18 +413,18 @@ const StockOutPage = () => {
           <tbody>
             {filteredRecords.map((record) => (
               <tr key={record.id}>
-                <td className="font-weight-bold">{record.reference}</td>
-                <td>{getProductName(record.product_id)}</td>
+                <td>{record.reference}</td>
+                <td>{record.product || 'Unknown'}</td>
                 <td>{getLocationName(record.location_id)}</td>
                 <td>{record.quantity}</td>
-                <td>TZS {Number(record.total_cost || 0).toLocaleString()}</td>
+                <td>TZS {Number(record.cost_fifo || record.total_cost || 0).toLocaleString()}</td>
                 <td>{record.purpose}</td>
                 <td>{record.issued_by || 'System'}</td>
                 <td>
-                  {new Date(record.created_at).toLocaleDateString()}
+                  {record.issued_at ? new Date(record.issued_at).toLocaleDateString() : new Date(record.created_at).toLocaleDateString()}
                 </td>
                 <td>
-                  <button className="btn btn-ghost btn-sm">View</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleViewStockOut(record.id)}>View</button>
                 </td>
               </tr>
             ))}
@@ -691,6 +703,30 @@ const StockOutPage = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* View Stock Out Modal */}
+      <Modal
+        isOpen={viewModal.isOpen}
+        title="View Stock Out Record"
+        onClose={() => {
+          viewModal.close();
+          setViewingStockOut(null);
+        }}
+        size="large"
+      >
+        {viewingStockOut && (
+          <div>
+            <h4>Reference: {viewingStockOut.reference}</h4>
+            <p>Product: {getProductName(viewingStockOut.product_id)}</p>
+            <p>Location: {getLocationName(viewingStockOut.location_id)}</p>
+            <p>Quantity: {viewingStockOut.quantity}</p>
+            <p>Cost: TZS {Number(viewingStockOut.total_cost || 0).toLocaleString()}</p>
+            <p>Purpose: {viewingStockOut.purpose}</p>
+            <p>Issued By: {viewingStockOut.issuer?.fullName || viewingStockOut.issued_by || 'System'}</p>
+            <p>Date: {new Date(viewingStockOut.created_at).toLocaleDateString()}</p>
+          </div>
+        )}
       </Modal>
     </div>
   );
