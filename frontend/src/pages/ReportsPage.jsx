@@ -262,7 +262,7 @@ const ReportsPage = () => {
           response = await apiGet('/reports', token);
       }
 
-      setData(response?.data ?? response ?? {});
+      setData(response ?? {});
     } catch (err) {
       setError(err.message || 'Unable to load report');
       setData(null);
@@ -275,10 +275,11 @@ const ReportsPage = () => {
     loadReport(activeReport);
   }, [activeReport, dateRange.startDate, dateRange.endDate]);
 
-  const overview = data?.inventory || data || {};
-  const movements = data?.movements || {};
-  const purchases = data?.purchases || {};
-  const stockSegments = data?.stockSegments || [
+  const payload = data?.data ?? data ?? {};
+  const overview = data?.inventory ?? data?.data?.inventory ?? (payload ?? {});
+  const movements = data?.movements ?? data?.data?.movements ?? {};
+  const purchases = data?.purchases ?? data?.data?.purchases ?? {};
+  const stockSegments = data?.stockSegments ?? data?.data?.stockSegments ?? [
     { name: 'Available', value: overview.totalProducts || 0 },
     { name: 'Low Stock', value: overview.lowStock || 0 },
     { name: 'Damaged', value: overview.damaged || 0 },
@@ -287,7 +288,8 @@ const ReportsPage = () => {
 
   const getCurrentRows = () => {
     if (!data) return [];
-    return getReportRowsForTab(activeReport, data);
+    const payload = data?.data ?? data ?? {};
+    return getReportRowsForTab(activeReport, payload);
   };
 
   const exportCurrentReport = (type) => {
