@@ -1,57 +1,112 @@
-// Export products to CSV
-export const exportToCSV = (products, filename = 'products.csv') => {
-  if (!products || products.length === 0) {
+// Export data of any shape to CSV, Excel, and PDF.
+const flattenValue = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) return value.map((item) => flattenValue(item)).join(', ');
+    if (value.name) return value.name;
+    if (value.fullName) return value.fullName;
+    if (value.label) return value.label;
+    if (value.po_number) return value.po_number;
+    if (value.email) return value.email;
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
+
+const flattenRows = (data) => {
+  const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.rows) ? data.rows : [];
+
+  return items.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      return { value: row };
+    }
+
+    const flat = {};
+    const visit = (obj, prefix = '') => {
+      if (!obj || typeof obj !== 'object') {
+        if (prefix) flat[prefix] = obj;
+        return;
+      }
+
+      if (Array.isArray(obj)) {
+        flat[prefix || 'value'] = obj.map((item) => flattenValue(item)).join(', ');
+        return;
+      }
+
+      Object.keys(obj).forEach((key) => {
+        const nextPrefix = prefix ? `${prefix}.${key}` : key;
+        const value = obj[key];
+        if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+          if (value.name || value.fullName || value.label || value.id || value.email || value.code) {
+            flat[nextPrefix] = flattenValue(value);
+          } else {
+            visit(value, nextPrefix);
+          }
+        } else {
+          flat[nextPrefix] = flattenValue(value);
+        }
+      });
+    };
+
+    visit(row);
+    return flat;
+  });
+};
+
+const getHeaders = (rows) => [...new Set(rows.flatMap((row) => Object.keys(row)))];
+
+const asCSVText = (rows) => {
+  if (!rows || rows.length === 0) return '';
+  const headers = getHeaders(rows);
+  const rowsText = rows.map((row) => headers.map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`).join(','));
+  return [headers, ...rowsText].map((line) => Array.isArray(line) ? line.join(',') : line).join('\n');
+};
+
+const downloadFile = (blob, filename) => {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+};
+
+// Export users to CSV
+export const exportToCSV = (data, filename = 'report.csv') => {
+  const rows = flattenRows(data);
+  if (!rows.length) {
     alert('No data to export');
     return;
   }
 
-  const headers = ['ID', 'Name', 'Brand', 'Category', 'Quantity', 'Price', 'Condition', 'Serial Code'];
-  const rows = products.map((product) => [
-    product.id,
-    product.name,
-    product.brand,
-    product.category,
-    product.quantity,
-    product.price,
-    product.condition,
-    product.serialCode,
-  ]);
-
-  const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const csvContent = asCSVText(rows);
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   downloadFile(blob, filename);
 };
 
-// Export products to Excel (using simple CSV format for now)
-export const exportToExcel = (products, filename = 'products.xlsx') => {
-  if (!products || products.length === 0) {
+// Export users to Excel (using a tab-delimited format that opens in Excel)
+export const exportToExcel = (data, filename = 'report.xlsx') => {
+  const rows = flattenRows(data);
+  if (!rows.length) {
     alert('No data to export');
     return;
   }
 
-  const headers = ['ID', 'Name', 'Brand', 'Category', 'Quantity', 'Price', 'Condition', 'Serial Code'];
-  const rows = products.map((product) => [
-    product.id,
-    product.name,
-    product.brand,
-    product.category,
-    product.quantity,
-    product.price,
-    product.condition,
-    product.serialCode,
-  ]);
+  const headers = getHeaders(rows);
+  const xlsxContent = [headers, ...rows.map((row) => headers.map((header) => row[header] ?? ''))]
+    .map((line) => line.join('\t'))
+    .join('\n');
 
-  // Simple Excel format (can be improved with xlsx library)
-  const xlsxContent = [headers, ...rows].map((row) => row.join('\t')).join('\n');
-
-  const blob = new Blob([xlsxContent], { type: 'application/vnd.ms-excel' });
+  const blob = new Blob([xlsxContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
   downloadFile(blob, filename);
 };
 
-// Export products to PDF (using jsPDF + autoTable)
-export const exportToPDF = async (products, filename = 'products.pdf') => {
-  if (!products || products.length === 0) {
+// Export users to PDF using jsPDF and autoTable
+export const exportToPDF = async (data, filename = 'report.pdf') => {
+  const rows = flattenRows(data);
+  if (!rows.length) {
     alert('No data to export');
     return;
   }
@@ -60,27 +115,28 @@ export const exportToPDF = async (products, filename = 'products.pdf') => {
     const { jsPDF } = await import('jspdf');
     const autoTable = (await import('jspdf-autotable')).default || (await import('jspdf-autotable'));
 
+    const headers = getHeaders(rows);
+    const body = rows.map((row) => headers.map((header) => String(row[header] ?? '')));
+
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'A4' });
-    const title = 'Product Inventory Report';
     doc.setFontSize(18);
-    doc.text(title, 40, 40);
+    doc.text('Report Export', 40, 40);
     doc.setFontSize(10);
     doc.text(`Generated: ${new Date().toLocaleString()}`, 40, 60);
 
-    const headers = ['ID', 'Name', 'Brand', 'Category', 'Qty', 'Price', 'Condition', 'Serial'];
-    const rows = products.map((p) => [p.id, p.name, p.brand || '', p.category || '', p.quantity || 0, p.price || 0, p.condition || '', p.serialCode || '']);
-
     autoTable(doc, {
       head: [headers],
-      body: rows,
+      body,
       startY: 80,
-      styles: { fontSize: 9 },
+      styles: { fontSize: 7 },
       headStyles: { fillColor: [45, 108, 223] },
       theme: 'striped',
+      overflow: 'linebreak',
+      columnStyles: { 0: { cellWidth: 90 } },
     });
 
-    const pdfData = doc.output('blob');
-    downloadFile(pdfData, filename);
+    const pdfBlob = doc.output('blob');
+    downloadFile(pdfBlob, filename);
   } catch (err) {
     console.error('PDF export failed:', err);
     alert('PDF export failed.');
@@ -97,24 +153,20 @@ export const importFromCSV = (file) => {
         const csv = event.target.result;
         const lines = csv.split('\n').filter((line) => line.trim());
         const headers = lines[0].split(',').map((h) => h.trim().replace(/"/g, ''));
-        const products = [];
+        const items = [];
 
         for (let i = 1; i < lines.length; i++) {
           const values = lines[i].split(',').map((v) => v.trim().replace(/"/g, ''));
           if (values.length === headers.length) {
-            products.push({
-              name: values[1],
-              brand: values[2],
-              category: values[3],
-              quantity: parseInt(values[4]) || 0,
-              price: parseInt(values[5]) || 0,
-              condition: values[6],
-              serialCode: values[7],
+            const item = {};
+            headers.forEach((header, idx) => {
+              item[header] = values[idx];
             });
+            items.push(item);
           }
         }
 
-        resolve(products);
+        resolve(items);
       } catch (error) {
         reject(new Error('Failed to parse CSV file'));
       }
@@ -125,19 +177,4 @@ export const importFromCSV = (file) => {
   });
 };
 
-// Import Excel file (simplified - reads as CSV)
-export const importFromExcel = (file) => {
-  return importFromCSV(file);
-};
-
-// Helper function to download file
-const downloadFile = (blob, filename) => {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
-};
+export const importFromExcel = (file) => importFromCSV(file);

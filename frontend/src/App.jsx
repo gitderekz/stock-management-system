@@ -140,25 +140,34 @@ const DashboardPage = () => {
             </div>
           </div>
           <div className="chart-area">
-            <div className="chart-bars">
-              {segments.map((segment, idx) => (
-                <div key={idx} className="bar-wrap" title={`${segment.name}: ${segment.value} items`}>
-                  <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
-                    <div className="bar" style={{ height: getSegmentHeight(segment.value) + '%', width: '100%', position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '6px' }}>
-                      <span style={{ 
-                        fontSize: '14px',
-                        fontWeight: 'bold',
-                        color: '#fff',
-                        textShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                        zIndex: 10
-                      }}>
-                        {segment.value}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="bar-label">{segment.name}</div>
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: 12 }}>
+              <div style={{ width: 42, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: 11, color: '#64748b', paddingBottom: 18 }}>
+                {[4, 3, 2, 1, 0].map((tick) => (
+                  <div key={tick} style={{ height: 32, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>{tick}</div>
+                ))}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ position: 'relative', height: 220, borderLeft: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'end', gap: 14, padding: '8px 8px 0 8px' }}>
+                  {segments.map((segment, idx) => {
+                    const colors = ['#22c55e', '#f59e0b', '#ef4444', '#94a3b8'];
+                    const max = Math.max(...segments.map((s) => Number(s.value || 0)), 1);
+                    const value = Number(segment.value || 0);
+                    const height = `${(value / max) * 100}%`;
+                    return (
+                      <div key={idx} style={{ flex: 1, minWidth: 80, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }} title={`${segment.name}: ${segment.value} items`}>
+                        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', paddingBottom: 6 }}>
+                          <div style={{ width: '80%', height, minHeight: 18, background: colors[idx % colors.length], borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)' }}>{value}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+                <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 10, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+                  {segments.map((segment, idx) => (
+                    <div key={idx} style={{ flex: 1, textAlign: 'center' }}>{segment.name}</div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </article>

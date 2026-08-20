@@ -2,6 +2,30 @@ const { Op } = require('sequelize');
 const { sequelize, Product, StockMovement, StockBatch, PurchaseOrder, User, Location, SystemLog } = require('../models');
 const { createLog } = require('./logsController');
 
+const safeNumber = (value) => {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const normalizeAllocations = (rawValue) => {
+  if (!rawValue) return [];
+  if (Array.isArray(rawValue)) return rawValue;
+  if (typeof rawValue === 'string') {
+    try {
+      const parsed = JSON.parse(rawValue);
+      return Array.isArray(parsed) ? parsed : [parsed].filter(Boolean);
+    } catch (e) {
+      return [];
+    }
+  }
+  if (typeof rawValue === 'object') {
+    if (Array.isArray(rawValue.allocations)) return rawValue.allocations;
+    if (rawValue.batch_id || rawValue.batch_number || rawValue.quantity) return [rawValue];
+    return Object.values(rawValue).flatMap((entry) => (Array.isArray(entry) ? entry : [entry])).filter(Boolean);
+  }
+  return [];
+};
+
 // Dashboard overview report
 const getReports = async (req, res) => {
   const totalProducts = await Product.count();
@@ -9,7 +33,7 @@ const getReports = async (req, res) => {
     attributes: [[sequelize.fn('SUM', sequelize.literal('price * quantity')), 'totalStockValue']],
     raw: true,
   });
-  const totalStockValue = Number(totalStockValueRow.totalStockValue || 0);
+  const totalStockValue = safeNumber(totalStockValueRow?.totalStockValue);
   const lowStock = await Product.count({ where: { quantity: { [Op.lte]: 5 } } });
   const outOfStock = await Product.count({ where: { quantity: 0 } });
   const damaged = await StockMovement.count({ where: { type: 'damage' } });
@@ -18,28 +42,16 @@ const getReports = async (req, res) => {
   today.setHours(0, 0, 0, 0);
 
   const stockInToday = await StockMovement.count({
-    where: {
-      type: ['purchase', 'in'],
-      createdAt: { [Op.gte]: today },
-    },
+    where: { type: ['purchase', 'in'], createdAt: { [Op.gte]: today } },
   });
   const stockOutToday = await StockMovement.count({
-    where: {
-      type: ['sale', 'out'],
-      createdAt: { [Op.gte]: today },
-    },
+    where: { type: ['sale', 'out'], createdAt: { [Op.gte]: today } },
   });
   const transfersToday = await StockMovement.count({
-    where: {
-      type: 'transfer',
-      createdAt: { [Op.gte]: today },
-    },
+    where: { type: 'transfer', createdAt: { [Op.gte]: today } },
   });
   const damagedToday = await StockMovement.count({
-    where: {
-      type: 'damage',
-      createdAt: { [Op.gte]: today },
-    },
+    where: { type: 'damage', createdAt: { [Op.gte]: today } },
   });
 
   const recentPurchases = await StockMovement.findAll({
@@ -51,17 +63,15 @@ const getReports = async (req, res) => {
 
   const purchaseMap = {};
   recentPurchases.forEach((movement) => {
-    const supplierId = movement.metadata?.supplierId || movement.metadata?.supplierName || 'unknown';
-    const supplierName = movement.metadata?.supplierName || `Supplier ${supplierId}`;
-    if (!purchaseMap[supplierName]) {
-      purchaseMap[supplierName] = 0;
-    }
-    purchaseMap[supplierName] += Number(movement.metadata?.amount || 0);
+    const meta = movement.metadata || {};
+    const supplierId = meta.supplierId || meta.supplierName || 'unknown';
+    const supplierName = meta.supplierName || `Supplier ${supplierId}`;
+    purchaseMap[supplierName] = (purchaseMap[supplierName] || 0) + safeNumber(meta.amount || meta.total_cost || 0);
   });
 
   const purchaseBySupplier = Object.keys(purchaseMap).map((supplier) => ({ supplier, value: purchaseMap[supplier] }));
 
-  try { await createLog(req.user?.id || null, 'Report', 'read', null, `Generated reports overview`, { params: req.query }, req.ip); } catch (e) {}
+  try { await createLog(req.user?.id || null, 'Report', 'read', null, 'Generated reports overview', { params: req.query }, req.ip); } catch (e) {}
 
   res.json({
     success: true,
@@ -83,6 +93,12 @@ const getReports = async (req, res) => {
         totalPurchases: Object.values(purchaseMap).reduce((sum, value) => sum + value, 0),
         purchaseBySupplier,
       },
+      stockSegments: [
+        { name: 'Available', value: Math.max(totalProducts - lowStock, 0) },
+        { name: 'Low Stock', value: lowStock },
+        { name: 'Damaged', value: damaged },
+        { name: 'Reserved', value: 0 },
+      ],
     },
   });
 };
@@ -153,31 +169,26 @@ const generateFIFOCostReport = async (req, res) => {
       order: [['createdAt', 'DESC']],
     });
 
-    const cogs_data = movements.map(m => {
-      let allocations = [];
-      try {
-        const raw = m.batch_allocations;
-        allocations = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
-      } catch (e) {
-        allocations = [];
-      }
+    const cogs_data = movements.map((m) => {
+      const allocations = normalizeAllocations(m.batch_allocations);
+      const batchRows = allocations.map((a) => ({
+        batch_number: a.batch_number || a.batchNo || a.batchId || '—',
+        quantity: safeNumber(a.quantity),
+        unit_cost: safeNumber(a.unit_cost ?? a.unitCost ?? 0),
+        total: safeNumber(a.total_cost ?? a.totalCost ?? 0),
+      }));
 
       return {
         movement_id: m.id,
         product_name: m.product?.name || 'Unknown',
         sku: m.product?.sku || '-',
-        quantity_issued: m.quantity,
+        quantity_issued: safeNumber(m.quantity),
         issued_by: m.issuer?.fullName || 'System',
         issued_at: m.createdAt,
-        total_cost: parseFloat(m.total_cost),
-        unit_cost: parseFloat(m.unit_cost),
+        total_cost: safeNumber(m.total_cost),
+        unit_cost: safeNumber(m.unit_cost),
         reference: m.reference,
-        batch_allocations: allocations.map(a => ({
-          batch_number: a.batch_number,
-          quantity: a.quantity,
-          unit_cost: a.unit_cost,
-          total: a.total_cost,
-        })),
+        batch_allocations: batchRows,
       };
     });
 
