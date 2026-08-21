@@ -203,6 +203,20 @@ const reportLabels = {
   returns: 'Returns',
 };
 
+const usePaginatedRows = (rows, pageSize = 8) => {
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [rows?.length]);
+
+  const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+
+  return { page: safePage, setPage, totalPages, visibleRows };
+};
+
 const ReportsPage = () => {
   const { token } = useAuth();
   const [activeReport, setActiveReport] = useState('overview');
@@ -276,7 +290,7 @@ const ReportsPage = () => {
   }, [activeReport, dateRange.startDate, dateRange.endDate]);
 
   const payload = data?.data ?? data ?? {};
-  const overview = data?.inventory ?? data?.data?.inventory ?? (payload ?? {});
+  const overview = data?.inventory ?? data?.data?.inventory ?? payload;
   const movements = data?.movements ?? data?.data?.movements ?? {};
   const purchases = data?.purchases ?? data?.data?.purchases ?? {};
   const stockSegments = data?.stockSegments ?? data?.data?.stockSegments ?? [
@@ -286,9 +300,15 @@ const ReportsPage = () => {
     { name: 'Reserved', value: 0 },
   ];
 
+  const firstDefined = (...vals) => {
+    for (const v of vals) {
+      if (v !== undefined && v !== null) return v;
+    }
+    return undefined;
+  };
+
   const getCurrentRows = () => {
     if (!data) return [];
-    const payload = data?.data ?? data ?? {};
     return getReportRowsForTab(activeReport, payload);
   };
 
@@ -305,50 +325,58 @@ const ReportsPage = () => {
     if (type === 'pdf') exportToPDF(rows, filename);
   };
 
-  const GenericReport = ({ title, columns, rows, totals }) => (
-    <div className="panel" style={{ padding: 0, borderRadius: 18, overflow: 'hidden', boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0, padding: '16px 18px 14px', background: 'linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.85))', borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
-        <h4 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a' }}>{title}</h4>
-        <div className="toolbar-group">
-          <button className="btn btn-light" type="button" onClick={() => exportCurrentReport('csv')}>CSV</button>
-          <button className="btn btn-light" type="button" onClick={() => exportCurrentReport('xls')}>Excel</button>
-          <button className="btn btn-light" type="button" onClick={() => exportCurrentReport('pdf')}>PDF</button>
-        </div>
-      </div>
+  const GenericReport = ({ title, columns, rows, totals }) => {
+    const paginated = usePaginatedRows(rows || [], 8);
+    const { page, setPage, totalPages, visibleRows } = paginated;
 
-      {(!rows || rows.length === 0) ? (
-        <div className="alert alert-info" style={{ margin: 18 }}>No data available for this report.</div>
-      ) : (
-        <div style={{ overflowX: 'auto', padding: 14 }}>
-          <table className="table" style={reportTableStyle}>
-            <thead>
-              <tr>
-                {columns.map((col) => <th key={col.key} style={reportHeaderStyle}>{col.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => (
-                <tr key={idx} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                  {columns.map((col) => (
-                    <td key={`${idx}-${col.key}`} style={reportCellStyle}>
-                      {formatCellValue(getNestedValue(row, col.key))}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              {totals && (
-                <tr style={reportTotalsStyle}>
-                  {columns.map((col) => (
-                    <td key={`totals-${col.key}`} style={{ ...reportCellStyle, borderBottom: 'none' }}>{formatCellValue(getNestedValue(totals, col.key))}</td>
-                  ))}
-                </tr>
-              )}
-            </tbody>
-          </table>
+    return (
+      <div className="panel" style={{ padding: 0, borderRadius: 18, overflow: 'hidden', boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0, padding: '16px 18px 14px', background: 'linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.85))', borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
+          <h4 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a' }}>{title}</h4>
+          <div className="toolbar-group">
+            <button className="btn btn-light" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569', margin: '0 6px' }}>Page {page}/{totalPages}</span>
+            <button className="btn btn-light" type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
+            <button className="btn btn-light" type="button" onClick={() => exportCurrentReport('csv')}>CSV</button>
+            <button className="btn btn-light" type="button" onClick={() => exportCurrentReport('xls')}>Excel</button>
+            <button className="btn btn-light" type="button" onClick={() => exportCurrentReport('pdf')}>PDF</button>
+          </div>
         </div>
-      )}
-    </div>
-  );
+
+        {(!visibleRows || visibleRows.length === 0) ? (
+          <div className="alert alert-info" style={{ margin: 18 }}>No data available for this report.</div>
+        ) : (
+          <div style={{ overflowX: 'auto', padding: 14 }}>
+            <table className="table" style={reportTableStyle}>
+              <thead>
+                <tr>
+                  {columns.map((col) => <th key={col.key} style={reportHeaderStyle}>{col.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row, idx) => (
+                  <tr key={`${page}-${idx}`} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                    {columns.map((col) => (
+                      <td key={`${page}-${idx}-${col.key}`} style={reportCellStyle}>
+                        {formatCellValue(getNestedValue(row, col.key))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {totals && (
+                  <tr style={reportTotalsStyle}>
+                    {columns.map((col) => (
+                      <td key={`totals-${col.key}`} style={{ ...reportCellStyle, borderBottom: 'none' }}>{formatCellValue(getNestedValue(totals, col.key))}</td>
+                    ))}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const OverviewReport = () => (
     <div className="report-grid">
@@ -370,10 +398,10 @@ const ReportsPage = () => {
       </div>
 
       <div className="panel" style={{ gridColumn: '1 / -1' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div style={{ marginBottom: '12px' }}>
           <h4 style={{ margin: 0 }}>Inventory Health - Stock Distribution</h4>
         </div>
-        <div className="chart-area">
+        <div className="chart-area" style={{ position: 'static' }}>
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 12 }}>
             <div style={{ width: 48, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: 11, color: '#64748b', paddingBottom: 18 }}>
               {[4, 3, 2, 1, 0].map((tick) => (
@@ -381,16 +409,16 @@ const ReportsPage = () => {
               ))}
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ position: 'relative', height: 220, borderLeft: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'end', gap: 14, padding: '8px 8px 0 8px' }}>
+              <div style={{ position: 'relative', height: 220, borderLeft: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'flex-end', gap: 14, padding: '8px 8px 0 8px' }}>
                 {stockSegments.map((segment, idx) => {
                   const colors = ['#22c55e', '#f59e0b', '#ef4444', '#94a3b8'];
                   const max = Math.max(...stockSegments.map((s) => Number(s.value || 0)), 1);
                   const value = Number(segment.value || 0);
-                  const height = `${(value / max) * 100}%`;
+                  const height = max > 0 ? `${Math.max((value / max) * 100, value > 0 ? 12 : 0)}%` : '0%';
                   return (
-                    <div key={idx} style={{ flex: 1, minWidth: 80, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }} title={`${segment.name}: ${segment.value} items`}>
-                      <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', paddingBottom: 6 }}>
-                        <div style={{ width: '80%', height, minHeight: 18, background: colors[idx % colors.length], borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)' }}>{value}</div>
+                    <div key={idx} style={{ flex: 1, minWidth: 80, height: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} title={`${segment.name}: ${segment.value} items`}>
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <div style={{ width: '80%', height, minHeight: value > 0 ? 18 : 0, background: colors[idx % colors.length], borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)' }}>{value}</div>
                       </div>
                     </div>
                   );
@@ -409,22 +437,34 @@ const ReportsPage = () => {
       <div className="panel" style={{ gridColumn: '1 / -1' }}>
         <h4 style={{ marginBottom: 12 }}>Today's Activity</h4>
         <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-          <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-            <label style={{ color: '#64748b', fontWeight: 600 }}>Stock In</label>
-            <div className="text-success" style={{ fontWeight: 700, fontSize: 20, color: '#16a34a' }}>{movements.stockInToday || 0} units</div>
-          </div>
-          <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-            <label style={{ color: '#64748b', fontWeight: 600 }}>Stock Out</label>
-            <div className="text-danger" style={{ fontWeight: 700, fontSize: 20, color: '#dc2626' }}>{movements.stockOutToday || 0} units</div>
-          </div>
-          <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-            <label style={{ color: '#64748b', fontWeight: 600 }}>Transfers</label>
-            <div className="text-info" style={{ fontWeight: 700, fontSize: 20, color: '#2563eb' }}>{movements.transfersToday || 0}</div>
-          </div>
-          <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-            <label style={{ color: '#64748b', fontWeight: 600 }}>Damaged</label>
-            <div className="text-danger" style={{ fontWeight: 700, fontSize: 20, color: '#dc2626' }}>{movements.damagedToday || 0}</div>
-          </div>
+          {(() => {
+            // try multiple possible paths for today's activity metrics
+            const today = firstDefined(movements.today, movements.todaySummary, data?.today, data?.summary, {});
+            const stockInToday = Number(firstDefined(movements.stockInToday, movements.stock_in_today, movements.incoming_today, today.stockIn, today.incoming, 0)) || 0;
+            const stockOutToday = Number(firstDefined(movements.stockOutToday, movements.stock_out_today, movements.outgoing_today, today.stockOut, today.outgoing, 0)) || 0;
+            const transfersToday = Number(firstDefined(movements.transfersToday, movements.transfers_today, today.transfers, 0)) || 0;
+            const damagedToday = Number(firstDefined(movements.damagedToday, movements.damaged_today, today.damaged, 0)) || 0;
+            return (
+              <>
+                <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                  <label style={{ color: '#64748b', fontWeight: 600 }}>Stock In</label>
+                  <div className="text-success" style={{ fontWeight: 700, fontSize: 20, color: '#16a34a' }}>{stockInToday} units</div>
+                </div>
+                <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                  <label style={{ color: '#64748b', fontWeight: 600 }}>Stock Out</label>
+                  <div className="text-danger" style={{ fontWeight: 700, fontSize: 20, color: '#dc2626' }}>{stockOutToday} units</div>
+                </div>
+                <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                  <label style={{ color: '#64748b', fontWeight: 600 }}>Transfers</label>
+                  <div className="text-info" style={{ fontWeight: 700, fontSize: 20, color: '#2563eb' }}>{transfersToday}</div>
+                </div>
+                <div className="info-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                  <label style={{ color: '#64748b', fontWeight: 600 }}>Damaged</label>
+                  <div className="text-danger" style={{ fontWeight: 700, fontSize: 20, color: '#dc2626' }}>{damagedToday}</div>
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -438,15 +478,22 @@ const ReportsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {(purchases.purchaseBySupplier || []).map((supplier, idx) => (
-              <tr key={idx}>
-                <td>{supplier.supplier}</td>
-                <td>{currency(supplier.value)}</td>
-              </tr>
-            ))}
+            {(() => {
+              const list = firstDefined(purchases.purchaseBySupplier, purchases.bySupplier, purchases.purchase_by_supplier, purchases.suppliers, purchases) || [];
+              // normalize object maps into array
+              const normalized = Array.isArray(list)
+                ? list
+                : Object.keys(list || {}).map((k) => ({ supplier: k, value: list[k] }));
+              return normalized.map((supplier, idx) => (
+                <tr key={idx}>
+                  <td>{supplier.supplier || supplier.name || supplier.supplier_name || 'Unknown'}</td>
+                  <td>{currency(supplier.value || supplier.amount || supplier.total || supplier.value || 0)}</td>
+                </tr>
+              ));
+            })()}
             <tr style={{ fontWeight: 700, background: 'rgba(15, 23, 42, 0.06)' }}>
               <td>Total</td>
-              <td>{currency(purchases.totalPurchases || 0)}</td>
+              <td>{currency(firstDefined(purchases.totalPurchases, purchases.total_purchases, purchases.total, purchases.totalAmount, 0) || 0)}</td>
             </tr>
           </tbody>
         </table>

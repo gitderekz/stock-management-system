@@ -267,6 +267,20 @@ const StockOutPage = () => {
     return matchesSearch && matchesProduct && matchesLocation && matchesPurpose && matchesMinDate && matchesMaxDate;
   });
 
+  // pagination for stock-out records
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filteredRecords, 10);
+  const { page, setPage, totalPages, visibleRows } = paginated;
+
   const handleViewStockOut = async (id) => {
     try {
       const response = await apiGet(`/stock/out/${id}`, token);
@@ -411,7 +425,7 @@ const StockOutPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredRecords.map((record) => (
+            {visibleRows.map((record) => (
               <tr key={record.id}>
                 <td>{record.reference}</td>
                 <td>{record.product || 'Unknown'}</td>
@@ -430,6 +444,13 @@ const StockOutPage = () => {
             ))}
           </tbody>
         </table>
+        {filteredRecords.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {page}/{totalPages}</span>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
+          </div>
+        )}
       </section>
 
       {/* Stock Out Modal */}

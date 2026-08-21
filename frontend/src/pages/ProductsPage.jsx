@@ -25,9 +25,9 @@ const ProductsPage = () => {
   const [brands, setBrands] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [search, setSearch] = useState('');
+  const [form, setForm] = useState(initialForm);
   const [viewMode, setViewMode] = useState('grid');
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(initialForm);
   const [imageFiles, setImageFiles] = useState([]);
   const [videoFiles, setVideoFiles] = useState([]);
   const [message, setMessage] = useState('');
@@ -44,7 +44,6 @@ const ProductsPage = () => {
     maxQuantity: '',
     showLowStock: false,
   });
-
   const [selectedProducts, setSelectedProducts] = useState(new Set());
   const loadProducts = async () => {
     try {
@@ -89,6 +88,17 @@ const ProductsPage = () => {
     loadSuppliers();
   }, []);
 
+  // simple pagination hook for large product lists
+  const usePaginatedRows = (rows, pageSize = 12) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const query = search.toLowerCase().trim();
@@ -115,6 +125,9 @@ const ProductsPage = () => {
              matchesCondition && matchesPrice && matchesQuantity && matchesLowStock;
     });
   }, [products, search, filters]);
+
+  const paginated = usePaginatedRows(filteredProducts, 12);
+  const { page: productPage, setPage: setProductPage, totalPages: productTotalPages, visibleRows } = paginated;
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -447,7 +460,7 @@ const ProductsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((product) => (
+                {visibleRows.map((product) => (
                   <tr key={product.id}>
                     <td>{product.name}</td>
                     <td>{product.category || 'N/A'}</td>
@@ -466,7 +479,7 @@ const ProductsPage = () => {
             </table>
           ) : (
             <div className="product-grid">
-              {filteredProducts.map((product) => (
+              {visibleRows.map((product) => (
                 <article key={product.id} className="product-card">
                   <div className="product-image">
                     {product.images && product.images.length > 0 ? (
@@ -490,6 +503,13 @@ const ProductsPage = () => {
                   </div>
                 </article>
               ))}
+            </div>
+          )}
+          {filteredProducts.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '14px' }}>
+              <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.max(1, p - 1))} disabled={productPage === 1}>Prev</button>
+              <span style={{ fontSize: 12, color: '#475569' }}>Page {productPage}/{productTotalPages}</span>
+              <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.min(productTotalPages, p + 1))} disabled={productPage >= productTotalPages}>Next</button>
             </div>
           )}
         </section>

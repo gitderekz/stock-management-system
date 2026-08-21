@@ -36,6 +36,20 @@ const LocationsPage = () => {
     location.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // pagination for locations
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filtered, 10);
+  const { page, setPage, totalPages, visibleRows } = paginated;
+
   const openCreateModal = () => {
     setSelectedLocation(null);
     setForm({ name: '', code: '', type: 'warehouse', address: '' });
@@ -134,7 +148,7 @@ const LocationsPage = () => {
             <tr><th>Name</th><th>Code</th><th>Type</th><th>Address</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {filtered.map((location) => (
+            {visibleRows.map((location) => (
               <tr key={location.id}>
                 <td>{location.name}</td>
                 <td>{location.code}</td>
@@ -151,6 +165,13 @@ const LocationsPage = () => {
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {page}/{totalPages}</span>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
+          </div>
+        )}
       </article>
 
       <Modal isOpen={createEditModal.isOpen} title={selectedLocation ? 'Edit Location' : 'Create Location'} onClose={createEditModal.close} size="medium">

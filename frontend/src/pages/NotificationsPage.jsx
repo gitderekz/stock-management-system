@@ -75,6 +75,22 @@ const NotificationsPage = () => {
     n.type?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginatedUser = usePaginatedRows(userNotifications, 8);
+  const { page: userPage, setPage: setUserPage, totalPages: userTotal, visibleRows: visibleUserNotifications } = paginatedUser;
+
+  const paginatedAll = usePaginatedRows(allNotifications, 12);
+  const { page: adminPage, setPage: setAdminPage, totalPages: adminTotal, visibleRows: visibleAllNotifications } = paginatedAll;
+
   const handleMarkAsRead = async (notificationId) => {
     try {
       await apiPut(`/notifications/${notificationId}/mark-seen`, {}, token);
@@ -230,8 +246,8 @@ const NotificationsPage = () => {
 
         {viewMode === 'user' ? (
           <div className="notification-list">
-            {userNotifications.length > 0 ? (
-              userNotifications.map((notification) => (
+            {visibleUserNotifications.length > 0 ? (
+              visibleUserNotifications.map((notification) => (
                 <div
                   key={notification.id}
                   className={`notification-item ${notification.read ? 'notification-read' : ''}`}
@@ -263,6 +279,7 @@ const NotificationsPage = () => {
             )}
           </div>
         ) : (
+          <>
           <table className="table">
             <thead>
               <tr>
@@ -274,7 +291,7 @@ const NotificationsPage = () => {
               </tr>
             </thead>
             <tbody>
-              {allNotifications.map((notification) => (
+              {visibleAllNotifications.map((notification) => (
                 <tr key={notification.id}>
                   <td><strong>{notification.title}</strong></td>
                   <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -293,6 +310,14 @@ const NotificationsPage = () => {
               )}
             </tbody>
           </table>
+          {allNotifications.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+              <button className="btn btn-light" onClick={() => setAdminPage((p) => Math.max(1, p - 1))} disabled={adminPage === 1}>Prev</button>
+              <span style={{ fontSize: 12, color: '#475569' }}>Page {adminPage}/{adminTotal}</span>
+              <button className="btn btn-light" onClick={() => setAdminPage((p) => Math.min(adminTotal, p + 1))} disabled={adminPage >= adminTotal}>Next</button>
+            </div>
+          )}
+          </>
         )}
       </article>
 

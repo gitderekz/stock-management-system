@@ -46,6 +46,19 @@ const RolesPage = () => {
     (role.description || '').toLowerCase().includes(search.toLowerCase())
   );
 
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filtered, 10);
+  const { page: rolePage, setPage: setRolePage, totalPages: roleTotal, visibleRows: visibleRoles } = paginated;
+
   const openCreateModal = () => {
     setSelectedRole(null);
     setForm({ name: '', description: '', permissionIds: [] });
@@ -159,7 +172,7 @@ const RolesPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((role) => (
+            {visibleRoles.map((role) => (
               <tr key={role.id}>
                 <td><strong>{role.name}</strong></td>
                 <td>{role.description || 'N/A'}</td>
@@ -175,6 +188,13 @@ const RolesPage = () => {
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setRolePage((p) => Math.max(1, p - 1))} disabled={rolePage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {rolePage}/{roleTotal}</span>
+            <button className="btn btn-light" onClick={() => setRolePage((p) => Math.min(roleTotal, p + 1))} disabled={rolePage >= roleTotal}>Next</button>
+          </div>
+        )}
       </article>
 
       <Modal isOpen={createEditModal.isOpen} title={selectedRole ? 'Edit Role' : 'Create Role'} onClose={createEditModal.close} size="large">

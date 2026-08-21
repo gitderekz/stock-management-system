@@ -48,6 +48,20 @@ const UsersPage = () => {
     (user.roleName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // pagination for users list
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filtered, 10);
+  const { page, setPage, totalPages, visibleRows } = paginated;
+
   const openCreateModal = () => {
     setSelectedUser(null);
     setForm({ fullName: '', email: '', password: '', roleId: '' });
@@ -143,7 +157,7 @@ const UsersPage = () => {
             <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {filtered.map((user) => (
+            {visibleRows.map((user) => (
               <tr key={user.id}>
                 <td>{user.fullName}</td>
                 <td>{user.email}</td>
@@ -160,6 +174,13 @@ const UsersPage = () => {
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {page}/{totalPages}</span>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
+          </div>
+        )}
       </article>
 
       <Modal isOpen={createEditModal.isOpen} title={selectedUser ? 'Edit User' : 'Add User'} onClose={createEditModal.close} size="medium">

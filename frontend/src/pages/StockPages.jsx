@@ -2,6 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiGet, apiPost } from '../api.js';
 
+// simple pagination hook available to stock pages
+const usePaginatedRows = (rows, pageSize = 10) => {
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [rows?.length]);
+  const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+  return { page: safePage, setPage, totalPages, visibleRows };
+};
+
 const useStockOptions = (token) => {
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -141,6 +152,21 @@ const StockOutPage = () => {
 
   useEffect(() => { loadRecords(); }, [token]);
 
+  // pagination for transfers listing
+  const paginatedTransfersLocal = usePaginatedRows(records, 10);
+  const { page: trPageLocal, setPage: setTrPageLocal, totalPages: trTotalLocal, visibleRows: visibleTransfersLocal } = paginatedTransfersLocal;
+  const paginatedReturns = usePaginatedRows(records, 10);
+  const { page: retPage, setPage: setRetPage, totalPages: retTotal, visibleRows: visibleReturns } = paginatedReturns;
+
+  const paginatedDamaged = usePaginatedRows(records, 10);
+  const { page: dmgPage, setPage: setDmgPage, totalPages: dmgTotal, visibleRows: visibleDamaged } = paginatedDamaged;
+
+  const paginatedTransfers = usePaginatedRows(records, 10);
+  const { page: trPage, setPage: setTrPage, totalPages: trTotal, visibleRows: visibleTransfers } = paginatedTransfers;
+
+  const paginatedOut = usePaginatedRows(records, 10);
+  const { page: outPage, setPage: setOutPage, totalPages: outTotal, visibleRows: visibleOut } = paginatedOut;
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: name === 'quantity' ? Number(value) : value }));
@@ -193,7 +219,7 @@ const StockOutPage = () => {
             </tr>
           </thead>
           <tbody>
-            {records.length ? records.map((record) => (
+            {visibleOut.length ? visibleOut.map((record) => (
               <tr key={record.id}>
                 <td>{record.reference || `SO-${record.id}`}</td>
                 <td>{record.product || 'Unknown'}</td>
@@ -208,6 +234,13 @@ const StockOutPage = () => {
             )}
           </tbody>
         </table>
+        {records.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setOutPage((p) => Math.max(1, p - 1))} disabled={outPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {outPage}/{outTotal}</span>
+            <button className="btn btn-light" onClick={() => setOutPage((p) => Math.min(outTotal, p + 1))} disabled={outPage >= outTotal}>Next</button>
+          </div>
+        )}
 
         <form className="form-grid" onSubmit={submitStockOut}>
           <div className="field-group">
@@ -268,6 +301,10 @@ const StockTransferPage = () => {
 
   useEffect(() => { loadRecords(); }, [token]);
 
+  // pagination local to Transfers page
+  const paginatedTransfersPage = usePaginatedRows(records, 10);
+  const { page: transferPage, setPage: setTransferPage, totalPages: transferTotal, visibleRows: visibleTransfersPage } = paginatedTransfersPage;
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: name === 'quantity' ? Number(value) : value }));
@@ -319,7 +356,7 @@ const StockTransferPage = () => {
             </tr>
           </thead>
           <tbody>
-            {records.length ? records.map((record) => (
+            {visibleTransfersPage.length ? visibleTransfersPage.map((record) => (
               <tr key={record.id}>
                 <td>{record.reference || `TR-${record.id}`}</td>
                 <td>{record.product || 'Unknown'}</td>
@@ -334,6 +371,13 @@ const StockTransferPage = () => {
             )}
           </tbody>
         </table>
+            {records.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setTransferPage((p) => Math.max(1, p - 1))} disabled={transferPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {transferPage}/{transferTotal}</span>
+            <button className="btn btn-light" onClick={() => setTransferPage((p) => Math.min(transferTotal, p + 1))} disabled={transferPage >= transferTotal}>Next</button>
+          </div>
+        )}
 
         <form className="form-grid" onSubmit={submitTransfer}>
           <div className="field-group">
@@ -398,6 +442,8 @@ const DamagedPage = () => {
   };
 
   useEffect(() => { loadRecords(); }, [token]);
+  const paginatedDamagedLocal = usePaginatedRows(records, 10);
+  const { page: dmgPage, setPage: setDmgPage, totalPages: dmgTotal, visibleRows: visibleDamaged } = paginatedDamagedLocal;
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -448,7 +494,7 @@ const DamagedPage = () => {
             </tr>
           </thead>
           <tbody>
-            {records.length ? records.map((record) => (
+            {visibleDamaged.length ? visibleDamaged.map((record) => (
               <tr key={record.id}>
                 <td>{record.product || 'Unknown'}</td>
                 <td>{record.location || 'Unknown'}</td>
@@ -462,6 +508,13 @@ const DamagedPage = () => {
             )}
           </tbody>
         </table>
+        {records.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setDmgPage((p) => Math.max(1, p - 1))} disabled={dmgPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {dmgPage}/{dmgTotal}</span>
+            <button className="btn btn-light" onClick={() => setDmgPage((p) => Math.min(dmgTotal, p + 1))} disabled={dmgPage >= dmgTotal}>Next</button>
+          </div>
+        )}
 
         <form className="form-grid" onSubmit={submitDamage}>
           <div className="field-group">
@@ -517,6 +570,8 @@ const ReturnsPage = () => {
   };
 
   useEffect(() => { loadRecords(); }, [token]);
+  const paginatedReturnsLocal = usePaginatedRows(records, 10);
+  const { page: retPage, setPage: setRetPage, totalPages: retTotal, visibleRows: visibleReturns } = paginatedReturnsLocal;
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -565,7 +620,7 @@ const ReturnsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {records.length ? records.map((record) => (
+            {visibleReturns.length ? visibleReturns.map((record) => (
               <tr key={record.id}>
                 <td>{record.product || 'Unknown'}</td>
                 <td>{record.quantity || 0}</td>
@@ -578,6 +633,13 @@ const ReturnsPage = () => {
             )}
           </tbody>
         </table>
+        {records.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setRetPage((p) => Math.max(1, p - 1))} disabled={retPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {retPage}/{retTotal}</span>
+            <button className="btn btn-light" onClick={() => setRetPage((p) => Math.min(retTotal, p + 1))} disabled={retPage >= retTotal}>Next</button>
+          </div>
+        )}
 
         <form className="form-grid" onSubmit={submitReturn}>
           <div className="field-group">
@@ -624,6 +686,9 @@ const StockMovementsPage = () => {
     loadMovements();
   }, [token]);
 
+  const paginatedMovements = usePaginatedRows(movements, 10);
+  const { page: movPage, setPage: setMovPage, totalPages: movTotal, visibleRows: visibleMovements } = paginatedMovements;
+
   return (
     <section className="content-space">
       <article className="panel">
@@ -647,7 +712,7 @@ const StockMovementsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {movements.map((moment) => (
+            {visibleMovements.map((moment) => (
               <tr key={moment.id}>
                 <td>{moment.type}</td>
                 <td>{moment.product || 'Unknown'}</td>
@@ -657,11 +722,18 @@ const StockMovementsPage = () => {
                 <td>{moment.user || 'System'}</td>
               </tr>
             ))}
-            {!movements.length && (
+            {!visibleMovements.length && (
               <tr><td colSpan="6" className="empty-row">No stock movement records found.</td></tr>
             )}
           </tbody>
         </table>
+        {movements.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setMovPage((p) => Math.max(1, p - 1))} disabled={movPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {movPage}/{movTotal}</span>
+            <button className="btn btn-light" onClick={() => setMovPage((p) => Math.min(movTotal, p + 1))} disabled={movPage >= movTotal}>Next</button>
+          </div>
+        )}
       </article>
     </section>
   );

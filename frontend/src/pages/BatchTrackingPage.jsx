@@ -109,6 +109,19 @@ const BatchTrackingPage = () => {
     return sorted;
   }, [batches, search, filters]);
 
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filteredAndSortedBatches, 10);
+  const { page: batchPage, setPage: setBatchPage, totalPages: batchTotal, visibleRows: visibleBatches } = paginated;
+
   const clearFilters = () => {
     setFilters({
       minAge: '',
@@ -259,6 +272,7 @@ const BatchTrackingPage = () => {
             No batches found.
           </div>
         ) : (
+            <>
           <table className="table">
             <thead>
               <tr>
@@ -275,7 +289,7 @@ const BatchTrackingPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredAndSortedBatches.map((batch, index) => {
+              {visibleBatches.map((batch, index) => {
                 const ageStatus = getAgeStatus(batch.age);
                 const totalCost = (batch.unit_cost || 0) * (batch.quantity || 0);
                 return (
@@ -303,6 +317,14 @@ const BatchTrackingPage = () => {
               })}
             </tbody>
           </table>
+          {filteredAndSortedBatches.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+              <button className="btn btn-light" onClick={() => setBatchPage((p) => Math.max(1, p - 1))} disabled={batchPage === 1}>Prev</button>
+              <span style={{ fontSize: 12, color: '#475569' }}>Page {batchPage}/{batchTotal}</span>
+              <button className="btn btn-light" onClick={() => setBatchPage((p) => Math.min(batchTotal, p + 1))} disabled={batchPage >= batchTotal}>Next</button>
+            </div>
+          )}
+            </>
         )}
       </section>
     </div>

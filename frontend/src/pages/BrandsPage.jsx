@@ -33,6 +33,19 @@ const BrandsPage = () => {
 
   const filteredBrands = brands.filter((brand) => brand.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filteredBrands, 10);
+  const { page: brandPage, setPage: setBrandPage, totalPages: brandTotal, visibleRows: visibleBrands } = paginated;
+
   const openCreateModal = () => {
     setSelectedBrand(null);
     setForm({ name: '', description: '', website: '' });
@@ -122,7 +135,7 @@ const BrandsPage = () => {
             <tr><th>Name</th><th>Website</th><th>Description</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {filteredBrands.map((brand) => (
+            {visibleBrands.map((brand) => (
               <tr key={brand.id}>
                 <td>{brand.name}</td>
                 <td>{brand.website || '—'}</td>
@@ -138,6 +151,13 @@ const BrandsPage = () => {
             )}
           </tbody>
         </table>
+        {filteredBrands.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setBrandPage((p) => Math.max(1, p - 1))} disabled={brandPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {brandPage}/{brandTotal}</span>
+            <button className="btn btn-light" onClick={() => setBrandPage((p) => Math.min(brandTotal, p + 1))} disabled={brandPage >= brandTotal}>Next</button>
+          </div>
+        )}
       </article>
 
       <Modal isOpen={createEditModal.isOpen} title={selectedBrand ? 'Edit Brand' : 'Create Brand'} onClose={createEditModal.close} size="medium">

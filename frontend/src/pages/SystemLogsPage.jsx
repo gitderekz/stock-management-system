@@ -47,6 +47,19 @@ const SystemLogsPage = () => {
     );
   });
 
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filtered, 15);
+  const { page: logPage, setPage: setLogPage, totalPages: logTotal, visibleRows: visibleLogs } = paginated;
+
   const getActionBadgeClass = (action) => {
     const classMap = {
       'create': 'badge-success',
@@ -127,7 +140,7 @@ const SystemLogsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((log) => (
+            {visibleLogs.map((log) => (
               <tr key={log.id || `${log.timestamp}-${log.userId}`}>
                 <td>{new Date(log.timestamp).toLocaleString()}</td>
                 <td><strong>{log.user || 'System'}</strong></td>
@@ -138,7 +151,7 @@ const SystemLogsPage = () => {
                 <td style={{ fontSize: '0.85em', color: '#999', fontFamily: 'monospace' }}>{log.ipAddress || 'N/A'}</td>
               </tr>
             ))}
-            {!filtered.length && (
+            {!visibleLogs.length && (
               <tr><td colSpan="7" className="empty-row">{logs.length > 0 ? 'No matching logs found.' : 'No log entries found.'}</td></tr>
             )}
           </tbody>
@@ -146,6 +159,13 @@ const SystemLogsPage = () => {
         <div style={{ marginTop: '12px', color: '#666', fontSize: '0.9em' }}>
           Showing {filtered.length} of {logs.length} total logs
         </div>
+        {filtered.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setLogPage((p) => Math.max(1, p - 1))} disabled={logPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {logPage}/{logTotal}</span>
+            <button className="btn btn-light" onClick={() => setLogPage((p) => Math.min(logTotal, p + 1))} disabled={logPage >= logTotal}>Next</button>
+          </div>
+        )}
       </article>
     </section>
   );

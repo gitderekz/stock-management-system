@@ -57,7 +57,6 @@ const StockInPage = () => {
   const loadUsers = async () => {
     try {
       const res = await apiGet('/users', token);
-      // API may return {success,data} or array
       setUsers(res.data || res);
     } catch (err) {
       // ignore
@@ -285,6 +284,20 @@ const StockInPage = () => {
     return matchesSearch && matchesMinDate && matchesMaxDate;
   });
 
+  // pagination for stock-in records
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filteredRecords, 10);
+  const { page, setPage, totalPages, visibleRows } = paginated;
+
   const formatReceiptDate = (value) => {
     if (!value) return '—';
     const parsed = new Date(value);
@@ -419,7 +432,7 @@ const StockInPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredRecords.map((record) => (
+            {visibleRows.map((record) => (
               <tr key={record.id}>
                 <td className="font-weight-bold">
                   {record.reference_number || `GR-${record.id}`}
@@ -438,6 +451,13 @@ const StockInPage = () => {
             ))}
           </tbody>
         </table>
+        {filteredRecords.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {page}/{totalPages}</span>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
+          </div>
+        )}
       </section>
 
       {/* Receive Goods Modal */}

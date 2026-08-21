@@ -36,6 +36,20 @@ const SuppliersPage = () => {
     supplier.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // pagination for suppliers
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filtered, 10);
+  const { page, setPage, totalPages, visibleRows } = paginated;
+
   const openCreateModal = () => {
     setSelectedSupplier(null);
     setForm({ name: '', phone: '', email: '', address: '' });
@@ -135,7 +149,7 @@ const SuppliersPage = () => {
             <tr><th>Name</th><th>Phone</th><th>Email</th><th>Address</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {filtered.map((supplier) => (
+            {visibleRows.map((supplier) => (
               <tr key={supplier.id}>
                 <td>{supplier.name}</td>
                 <td>{supplier.phone || '—'}</td>
@@ -152,6 +166,13 @@ const SuppliersPage = () => {
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {page}/{totalPages}</span>
+            <button className="btn btn-light" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
+          </div>
+        )}
       </article>
 
       <Modal isOpen={createEditModal.isOpen} title={selectedSupplier ? 'Edit Supplier' : 'Create Supplier'} onClose={createEditModal.close} size="medium">

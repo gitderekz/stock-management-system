@@ -33,6 +33,19 @@ const CategoriesPage = () => {
 
   const filtered = categories.filter((category) => category.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filtered, 10);
+  const { page: catPage, setPage: setCatPage, totalPages: catTotal, visibleRows: visibleCategories } = paginated;
+
   const openCreateModal = () => {
     setSelectedCategory(null);
     setForm({ name: '', description: '' });
@@ -122,7 +135,7 @@ const CategoriesPage = () => {
             <tr><th>Name</th><th>Description</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {filtered.map((category) => (
+            {visibleCategories.map((category) => (
               <tr key={category.id}>
                 <td>{category.name}</td>
                 <td>{category.description || 'No description'}</td>
@@ -137,6 +150,13 @@ const CategoriesPage = () => {
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+            <button className="btn btn-light" onClick={() => setCatPage((p) => Math.max(1, p - 1))} disabled={catPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {catPage}/{catTotal}</span>
+            <button className="btn btn-light" onClick={() => setCatPage((p) => Math.min(catTotal, p + 1))} disabled={catPage >= catTotal}>Next</button>
+          </div>
+        )}
       </article>
 
       <Modal isOpen={createEditModal.isOpen} title={selectedCategory ? 'Edit Category' : 'Create Category'} onClose={createEditModal.close} size="medium">

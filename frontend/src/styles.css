@@ -1366,3 +1366,34 @@ body {
   padding: 0.5rem 0.75rem;
   font-size: 12px;
 }
+
+.tabs-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.tab-button {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.02);
+  color: #334155;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+  border-color: rgba(37, 99, 235, 0.42);
+  color: var(--primary);
+}
+
+.tab-button.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.18);
+}

@@ -51,8 +51,13 @@ const StatCard = ({ title, value, delta, trend }) => (
 const DashboardPage = () => {
   const [dashboardData, setDashboardData] = useState(null);
   const [products, setProducts] = useState([]);
+  const [productPage, setProductPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [products.length]);
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -122,6 +127,11 @@ const DashboardPage = () => {
   const maxSegment = Math.max(...segments.map(s => s.value), 1);
   const getSegmentHeight = (value) => ((value / maxSegment) * 100 || 5);
 
+  const productsPerPage = 5;
+  const totalProductPages = Math.max(1, Math.ceil(products.length / productsPerPage));
+  const safeProductPage = Math.min(productPage, totalProductPages);
+  const visibleProducts = products.slice((safeProductPage - 1) * productsPerPage, safeProductPage * productsPerPage);
+
   return (
     <div className="content-space">
       <section className="stats-grid">
@@ -147,16 +157,16 @@ const DashboardPage = () => {
                 ))}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ position: 'relative', height: 220, borderLeft: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'end', gap: 14, padding: '8px 8px 0 8px' }}>
+                <div style={{ position: 'relative', height: 220, borderLeft: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'flex-end', gap: 14, padding: '8px 8px 0 8px' }}>
                   {segments.map((segment, idx) => {
                     const colors = ['#22c55e', '#f59e0b', '#ef4444', '#94a3b8'];
                     const max = Math.max(...segments.map((s) => Number(s.value || 0)), 1);
                     const value = Number(segment.value || 0);
-                    const height = `${(value / max) * 100}%`;
+                    const height = max > 0 ? `${Math.max((value / max) * 100, value > 0 ? 12 : 0)}%` : '0%';
                     return (
-                      <div key={idx} style={{ flex: 1, minWidth: 80, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }} title={`${segment.name}: ${segment.value} items`}>
-                        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', paddingBottom: 6 }}>
-                          <div style={{ width: '80%', height, minHeight: 18, background: colors[idx % colors.length], borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)' }}>{value}</div>
+                      <div key={idx} style={{ flex: 1, minWidth: 80, height: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} title={`${segment.name}: ${segment.value} items`}>
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                          <div style={{ width: '80%', height, minHeight: value > 0 ? 18 : 0, background: colors[idx % colors.length], borderRadius: '10px 10px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)' }}>{value}</div>
                         </div>
                       </div>
                     );
@@ -226,7 +236,7 @@ const DashboardPage = () => {
               </tr>
             </thead>
             <tbody>
-              {products.length > 0 ? products.map((product, idx) => (
+              {visibleProducts.length > 0 ? visibleProducts.map((product, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid #e0e0e0' }}>
                   <td style={{ padding: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -259,12 +269,19 @@ const DashboardPage = () => {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#999' }}>No products available</td>
+                  <td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No products found.</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        {products.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '14px' }}>
+            <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.max(1, p - 1))} disabled={safeProductPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {safeProductPage}/{totalProductPages}</span>
+            <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.min(totalProductPages, p + 1))} disabled={safeProductPage >= totalProductPages}>Next</button>
+          </div>
+        )}
       </section>
     </div>
   );

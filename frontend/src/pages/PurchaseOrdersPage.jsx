@@ -92,6 +92,20 @@ const PurchaseOrdersPage = () => {
     });
   }, [purchaseOrders, search, statusFilter]);
 
+  // pagination for purchase orders
+  const usePaginatedRows = (rows, pageSize = 10) => {
+    const [page, setPage] = useState(1);
+    useEffect(() => setPage(1), [rows?.length]);
+    const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const visibleRows = rows?.slice(startIndex, startIndex + pageSize) || [];
+    return { page: safePage, setPage, totalPages, visibleRows };
+  };
+
+  const paginated = usePaginatedRows(filteredPOs, 10);
+  const { page, setPage, totalPages, visibleRows } = paginated;
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({
@@ -331,7 +345,7 @@ const PurchaseOrdersPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredPOs.map((po) => (
+              {visibleRows.map((po) => (
                 <tr key={po.id}>
                   <td className="font-weight-bold">{po.po_number}</td>
                   <td>{po.supplier}</td>
@@ -381,6 +395,13 @@ const PurchaseOrdersPage = () => {
               ))}
             </tbody>
           </table>
+          {filteredPOs.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '12px' }}>
+              <button className="btn btn-light" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+              <span style={{ fontSize: 12, color: '#475569' }}>Page {page}/{totalPages}</span>
+              <button className="btn btn-light" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
+            </div>
+          )}
           {filteredPOs.length === 0 && !loading && (
             <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
               No purchase orders found.
