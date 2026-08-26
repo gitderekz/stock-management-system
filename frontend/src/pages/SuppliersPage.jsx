@@ -17,6 +17,8 @@ const SuppliersPage = () => {
   const confirmModal = useModal();
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const normalizeResponseData = (response) => response?.data?.data ?? response?.data ?? response ?? null;
+
   const loadSuppliers = async () => {
     try {
       const response = await apiGet('/suppliers', token);
@@ -81,7 +83,8 @@ const SuppliersPage = () => {
           email: form.email.trim(),
           address: form.address.trim(),
         }, token);
-        setSuppliers((prev) => prev.map((item) => (item.id === selectedSupplier.id ? response.data.data : item)));
+        const updatedSupplier = normalizeResponseData(response) || selectedSupplier;
+        setSuppliers((prev) => prev.map((item) => (item.id === selectedSupplier.id ? updatedSupplier : item)));
         setMessage('Supplier updated successfully.');
       } else {
         const response = await apiPost('/suppliers', {
@@ -90,7 +93,8 @@ const SuppliersPage = () => {
           email: form.email.trim(),
           address: form.address.trim(),
         }, token);
-        setSuppliers((prev) => [response.data.data, ...prev]);
+        const created = normalizeResponseData(response) || { id: Date.now(), ...form };
+        setSuppliers((prev) => [created, ...prev]);
         setMessage('Supplier created successfully.');
       }
       setError('');

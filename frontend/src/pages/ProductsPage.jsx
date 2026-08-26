@@ -172,6 +172,8 @@ const ProductsPage = () => {
     }
   };
 
+  const normalizeResponseData = (response) => response?.data?.data ?? response?.data ?? response ?? null;
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     try {
@@ -190,7 +192,7 @@ const ProductsPage = () => {
         ? await apiPut(`/products/${editing.id}`, payload, token)
         : await apiPost('/products', payload, token);
 
-      const created = response.data;
+      const created = normalizeResponseData(response) || payload;
       if (editing) {
         setProducts((prev) => prev.map((item) => (item.id === editing.id ? created : item)));
         setMessage('Product updated successfully.');
@@ -258,7 +260,7 @@ const ProductsPage = () => {
       const createdProducts = await Promise.all(
         data.map(async (row) => {
           const response = await apiPost('/products', row, token);
-          return response.data;
+          return normalizeResponseData(response) || row;
         })
       );
 
@@ -455,7 +457,7 @@ const ProductsPage = () => {
                   <th>Quantity</th>
                   <th>Price</th>
                   <th>Condition</th>
-                  <th>Serial</th>
+                  <th>Part</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -492,9 +494,9 @@ const ProductsPage = () => {
                     <div className="product-title">{product.name}</div>
                     <div className="product-meta">{product.brand || 'Unknown'} • {product.category || 'Unassigned'} • Qty: {product.quantity}</div>
                     <div className="product-details">
-                      <span>Price: TZS {Number(product.price).toLocaleString()}</span>
+                      <span  style={{ display: "none" }}>Price: TZS {Number(product.price).toLocaleString()}</span>
                       <span>Condition: {product.condition}</span>
-                      <span>Serial: {product.serialCode || 'N/A'}</span>
+                      <span>Part: {product.serialCode || 'N/A'}</span>
                     </div>
                   </div>
                   <div className="action-row">
@@ -557,13 +559,13 @@ const ProductsPage = () => {
               ))}
             </select>
           </div>
-          <div className="field-group">
+          <div className="field-group" style={{ display: "none" }} >
             <label className="field-label">Quantity</label>
-            <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required />
+            <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required disabled hidden/>
           </div>
-          <div className="field-group">
+          <div className="field-group" style={{ display: "none" }} >
             <label className="field-label">Price</label>
-            <input className="text-input" type="number" name="price" min="0" value={form.price} onChange={handleChange} required />
+            <input className="text-input" type="number" name="price" min="0" value={form.price} onChange={handleChange} required disabled hidden/>
           </div>
           <div className="field-group">
             <label className="field-label">Condition</label>
@@ -574,7 +576,7 @@ const ProductsPage = () => {
             </select>
           </div>
           <div className="field-group">
-            <label className="field-label">Serial Code</label>
+            <label className="field-label">Part Number</label>
             <input className="text-input" name="serialCode" value={form.serialCode} onChange={handleChange} />
           </div>
           <div className="field-group">

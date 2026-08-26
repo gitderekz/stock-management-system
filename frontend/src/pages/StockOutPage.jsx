@@ -291,6 +291,11 @@ const StockOutPage = () => {
     }
   };
 
+  const getDetailTableRows = (record) => {
+    const rows = record?.allocations || record?.batch_allocations || record?.items || [];
+    return Array.isArray(rows) ? rows : [];
+  };
+
   return (
     <div className="content-space">
       <section className="panel panel-dashboard-header">
@@ -737,15 +742,71 @@ const StockOutPage = () => {
         size="large"
       >
         {viewingStockOut && (
-          <div>
-            <h4>Reference: {viewingStockOut.reference}</h4>
-            <p>Product: {getProductName(viewingStockOut.product_id)}</p>
-            <p>Location: {getLocationName(viewingStockOut.location_id)}</p>
-            <p>Quantity: {viewingStockOut.quantity}</p>
-            <p>Cost: TZS {Number(viewingStockOut.total_cost || 0).toLocaleString()}</p>
-            <p>Purpose: {viewingStockOut.purpose}</p>
-            <p>Issued By: {viewingStockOut.issuer?.fullName || viewingStockOut.issued_by || 'System'}</p>
-            <p>Date: {new Date(viewingStockOut.created_at).toLocaleDateString()}</p>
+          <div style={{ padding: '8px 6px 4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '16px 20px', marginBottom: '20px' }}>
+              <div className="info-item">
+                <label>Reference</label>
+                <div className="font-weight-bold">{viewingStockOut.reference || `SO-${viewingStockOut.id}`}</div>
+              </div>
+              <div className="info-item">
+                <label>Product</label>
+                <div>{getProductName(viewingStockOut.product_id)}</div>
+              </div>
+              <div className="info-item">
+                <label>Location</label>
+                <div>{getLocationName(viewingStockOut.location_id)}</div>
+              </div>
+              <div className="info-item">
+                <label>Quantity</label>
+                <div>{viewingStockOut.quantity}</div>
+              </div>
+              <div className="info-item">
+                <label>Cost (FIFO)</label>
+                <div>TZS {Number(viewingStockOut.total_cost || viewingStockOut.cost_fifo || 0).toLocaleString()}</div>
+              </div>
+              <div className="info-item">
+                <label>Purpose</label>
+                <div>{viewingStockOut.purpose || '—'}</div>
+              </div>
+              <div className="info-item">
+                <label>Issued By</label>
+                <div>{viewingStockOut.issuer?.fullName || viewingStockOut.issued_by || 'System'}</div>
+              </div>
+              <div className="info-item">
+                <label>Created</label>
+                <div>{new Date(viewingStockOut.created_at || viewingStockOut.issued_at || Date.now()).toLocaleDateString()}</div>
+              </div>
+            </div>
+
+            {getDetailTableRows(viewingStockOut).length > 0 && (
+              <>
+                <h4 style={{ marginBottom: '10px' }}>Allocation Details</h4>
+                <table className="table" style={{ marginBottom: '20px' }}>
+                  <thead>
+                    <tr>
+                      <th>Batch</th>
+                      <th>Qty</th>
+                      <th>Unit Price</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getDetailTableRows(viewingStockOut).map((entry, idx) => (
+                      <tr key={idx}>
+                        <td>{entry.batch_number || entry.batchNo || entry.batchId || `Batch ${idx + 1}`}</td>
+                        <td>{entry.quantity || entry.qty || 0}</td>
+                        <td>TZS {Number(entry.unit_price || entry.unitCost || entry.price || 0).toLocaleString()}</td>
+                        <td>TZS {Number((entry.quantity || entry.qty || 0) * (entry.unit_price || entry.unitCost || entry.price || 0)).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button className="btn btn-ghost" onClick={() => viewModal.close()}>Close</button>
+            </div>
           </div>
         )}
       </Modal>

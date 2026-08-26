@@ -17,6 +17,8 @@ const LocationsPage = () => {
   const confirmModal = useModal();
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const normalizeResponseData = (response) => response?.data?.data ?? response?.data ?? response ?? null;
+
   const loadLocations = async () => {
     try {
       const response = await apiGet('/locations', token);
@@ -81,7 +83,8 @@ const LocationsPage = () => {
           type: form.type,
           address: form.address.trim(),
         }, token);
-        setLocations((prev) => prev.map((item) => (item.id === selectedLocation.id ? response.data.data : item)));
+        const updatedLocation = normalizeResponseData(response) || selectedLocation;
+        setLocations((prev) => prev.map((item) => (item.id === selectedLocation.id ? updatedLocation : item)));
         setMessage('Location updated successfully.');
       } else {
         const response = await apiPost('/locations', {
@@ -90,7 +93,8 @@ const LocationsPage = () => {
           type: form.type,
           address: form.address.trim(),
         }, token);
-        setLocations((prev) => [response.data.data, ...prev]);
+        const created = normalizeResponseData(response) || { id: Date.now(), ...form };
+        setLocations((prev) => [created, ...prev]);
         setMessage('Location created successfully.');
       }
       setError('');

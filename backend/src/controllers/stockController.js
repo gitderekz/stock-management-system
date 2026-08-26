@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { StockMovement, Product, Location, User, DamagedStock, StockReturn } = require('../models');
+const { StockMovement, Product, Location, User, DamagedStock, StockReturn, StockBatch, StockReturnItem } = require('../models');
 
 const listDamagedStock = async (req, res) => {
   try {
@@ -103,8 +103,74 @@ const createTransfer = async (req, res) => {
 
 const createDamage = async (req, res) => {
   const amount = Number(req.body.quantity || 0);
+  if (amount <= 0) {
+    return res.status(400).json({ success: false, message: 'Damage quantity must be greater than 0' });
+  }
+
   const payload = await createMovementPayload(req, 'damage', amount > 0 ? -amount : amount);
 
+  // Find available batches for the product at location (FIFO order)
+  // If locationId is provided, only search in that location; otherwise search all locations
+  const batchQuery = {
+    product_id: req.body.productId,
+  };
+  if (req.body.locationId) {
+    batchQuery.location_id = req.body.locationId;
+  }
+
+  const availableBatches = await StockBatch.findAll({
+    where: batchQuery,
+    order: [['received_at', 'ASC']], // FIFO: oldest first
+  });
+
+  // Auto-allocate damage quantity across available batches
+  let remainingQuantity = amount;
+  const batchAllocations = [];
+  const damageItems = [];
+
+  for (const batch of availableBatches) {
+    if (remainingQuantity <= 0) break;
+
+    const quantityRemaining = Number(batch.quantity_remaining || 0);
+    if (quantityRemaining <= 0) continue;
+
+    // Allocate from this batch
+    const allocatedQuantity = Math.min(remainingQuantity, quantityRemaining);
+    const unitCost = Number(batch.unit_cost || 0);
+    const lineTotal = allocatedQuantity * unitCost;
+
+    batchAllocations.push({
+      batch_id: batch.id,
+      batch_number: batch.batch_number,
+      quantity: allocatedQuantity,
+      unit_cost: unitCost,
+      total: lineTotal,
+    });
+
+    // Prepare DamagedStockItem data (if model exists)
+    damageItems.push({
+      batch_id: batch.id,
+      batch_number: batch.batch_number,
+      quantity: allocatedQuantity,
+      unit_cost: unitCost,
+    });
+
+    // Decrement batch quantity
+    await batch.update({
+      quantity_remaining: quantityRemaining - allocatedQuantity,
+    });
+
+    remainingQuantity -= allocatedQuantity;
+  }
+
+  if (remainingQuantity > 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Insufficient stock available. Only ${amount - remainingQuantity} of ${amount} units can be marked as damaged.`,
+    });
+  }
+
+  // Create DamagedStock record
   const damageRecord = await DamagedStock.create({
     productId: req.body.productId,
     locationId: req.body.locationId || payload.locationId,
@@ -113,6 +179,34 @@ const createDamage = async (req, res) => {
     reportedBy: req.user?.id || null,
   });
 
+  // Create StockDamagedItem records for audit trail
+  if (damageItems.length > 0) {
+    const { StockDamagedItem } = require('../models');
+    await Promise.all(
+      damageItems.map((item) =>
+        StockDamagedItem.create({
+          damaged_stock_id: damageRecord.id,
+          product_id: req.body.productId,
+          batch_id: item.batch_id,
+          batch_number: item.batch_number,
+          quantity: item.quantity,
+          unit_cost: item.unit_cost,
+        })
+      )
+    );
+  } else {
+    // If no batch allocations found but quantity was specified, create a single damage item
+    const { StockDamagedItem } = require('../models');
+    await StockDamagedItem.create({
+      damaged_stock_id: damageRecord.id,
+      product_id: req.body.productId,
+      batch_id: null,
+      quantity: Math.abs(amount),
+      unit_cost: 0,
+    });
+  }
+
+  // Create StockMovement record with batch allocations
   const movement = await StockMovement.create({
     type: 'damage',
     product_id: req.body.productId,
@@ -126,22 +220,108 @@ const createDamage = async (req, res) => {
     reference: req.body.referenceNo || null,
     issued_by: req.user?.id || null,
     created_by: req.user?.id || null,
-    batch_allocations: null,
+    batch_allocations: JSON.stringify(batchAllocations),
     reason: req.body.reason || payload.reason,
-    notes: 'Damaged stock recorded',
+    notes: `Damaged stock recorded with ${batchAllocations.length} batch allocation(s)`,
   });
 
+  // Sync product quantity based on updated batches
   if (req.body.productId) {
     await syncProductQuantity(req.body.productId);
   }
-  try { await createLog(req.user?.id || null, 'DamagedStock', 'create', damageRecord.id, `Damage recorded for product ${req.body.productId}: ${amount}`, JSON.stringify(payload), req.ip); } catch (e) {}
-  res.status(201).json({ success: true, message: 'Damaged stock recorded', data: { movement, damageRecord } });
+
+  try {
+    await createLog(
+      req.user?.id || null,
+      'DamagedStock',
+      'create',
+      damageRecord.id,
+      `Damage recorded for product ${req.body.productId}: ${amount} units via ${batchAllocations.length} batch(es)`,
+      JSON.stringify({ batchAllocations, payload }),
+      req.ip
+    );
+  } catch (e) {}
+
+  res.status(201).json({
+    success: true,
+    message: 'Damaged stock recorded with batch tracking',
+    data: { movement, damageRecord, batchAllocations },
+  });
 };
 
 const createReturn = async (req, res) => {
   const amount = Number(req.body.quantity || 0);
+  if (amount <= 0) {
+    return res.status(400).json({ success: false, message: 'Return quantity must be greater than 0' });
+  }
+
   const payload = await createMovementPayload(req, 'return', amount);
 
+  // Find available batches for the product (FIFO order)
+  // If locationId is provided, only search in that location; otherwise search all locations
+  const batchQuery = {
+    product_id: req.body.productId,
+  };
+  if (req.body.locationId) {
+    batchQuery.location_id = req.body.locationId;
+  }
+
+  const availableBatches = await StockBatch.findAll({
+    where: batchQuery,
+    order: [['received_at', 'ASC']], // FIFO: oldest first
+  });
+
+  // Auto-allocate return quantity across available batches
+  let remainingQuantity = amount;
+  const batchAllocations = [];
+  const returnItems = [];
+
+  for (const batch of availableBatches) {
+    if (remainingQuantity <= 0) break;
+
+    const quantityRemaining = Number(batch.quantity_remaining || 0);
+    if (quantityRemaining <= 0) continue;
+
+    // Allocate from this batch
+    const allocatedQuantity = Math.min(remainingQuantity, quantityRemaining);
+    const unitCost = Number(batch.unit_cost || 0);
+    const lineTotal = allocatedQuantity * unitCost;
+
+    batchAllocations.push({
+      batch_id: batch.id,
+      batch_number: batch.batch_number,
+      quantity: allocatedQuantity,
+      unit_cost: unitCost,
+      total: lineTotal,
+    });
+
+    // Prepare StockReturnItem data
+    returnItems.push({
+      stock_return_id: null, // Will be set after StockReturn creation
+      product_id: req.body.productId, // Include product_id
+      batch_id: batch.id,
+      batch_number: batch.batch_number,
+      quantity: allocatedQuantity,
+      unit_price: unitCost,
+      unit_selling_price: batch.unit_selling_price || unitCost,
+    });
+
+    // Decrement batch quantity
+    await batch.update({
+      quantity_remaining: quantityRemaining - allocatedQuantity,
+    });
+
+    remainingQuantity -= allocatedQuantity;
+  }
+
+  if (remainingQuantity > 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Insufficient stock available. Only ${amount - remainingQuantity} of ${amount} units can be returned.`,
+    });
+  }
+
+  // Create StockReturn record
   const returnRecord = await StockReturn.create({
     product_id: req.body.productId,
     location_id: req.body.locationId || payload.locationId,
@@ -150,6 +330,34 @@ const createReturn = async (req, res) => {
     created_by: req.user?.id || null,
   });
 
+  // Create StockReturnItem records for audit trail
+  if (returnItems.length > 0) {
+    await Promise.all(
+      returnItems.map((item) =>
+        StockReturnItem.create({
+          stock_return_id: returnRecord.id,
+          product_id: req.body.productId, // Ensure product_id is always set
+          batch_id: item.batch_id,
+          batch_number: item.batch_number,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          unit_selling_price: item.unit_selling_price,
+        })
+      )
+    );
+  } else {
+    // If no batch allocations found but quantity was specified, create a single return item
+    await StockReturnItem.create({
+      stock_return_id: returnRecord.id,
+      product_id: req.body.productId,
+      batch_id: null,
+      quantity: Math.abs(amount),
+      unit_price: 0,
+      unit_selling_price: 0,
+    });
+  }
+
+  // Create StockMovement record with batch allocations
   const movement = await StockMovement.create({
     type: 'return',
     product_id: req.body.productId,
@@ -163,16 +371,33 @@ const createReturn = async (req, res) => {
     reference: req.body.referenceNo || null,
     issued_by: req.user?.id || null,
     created_by: req.user?.id || null,
-    batch_allocations: null,
+    batch_allocations: JSON.stringify(batchAllocations),
     reason: req.body.reason || payload.reason,
-    notes: 'Return recorded',
+    notes: `Return recorded with ${batchAllocations.length} batch allocation(s)`,
   });
 
+  // Sync product quantity based on updated batches
   if (req.body.productId) {
     await syncProductQuantity(req.body.productId);
   }
-  try { await createLog(req.user?.id || null, 'StockReturn', 'create', returnRecord.id, `Return recorded for product ${req.body.productId}: ${amount}`, JSON.stringify(payload), req.ip); } catch (e) {}
-  res.status(201).json({ success: true, message: 'Stock return recorded', data: { movement, returnRecord } });
+
+  try {
+    await createLog(
+      req.user?.id || null,
+      'StockReturn',
+      'create',
+      returnRecord.id,
+      `Return recorded for product ${req.body.productId}: ${amount} units via ${batchAllocations.length} batch(es)`,
+      JSON.stringify({ batchAllocations, payload }),
+      req.ip
+    );
+  } catch (e) {}
+
+  res.status(201).json({
+    success: true,
+    message: 'Stock return recorded with batch tracking',
+    data: { movement, returnRecord, batchAllocations },
+  });
 };
 
 const listMovements = async (req, res) => {

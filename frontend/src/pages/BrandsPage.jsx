@@ -17,6 +17,8 @@ const BrandsPage = () => {
   const confirmModal = useModal();
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const normalizeResponseData = (response) => response?.data?.data ?? response?.data ?? response ?? null;
+
   const loadBrands = async () => {
     try {
       const response = await apiGet('/brands', token);
@@ -72,11 +74,13 @@ const BrandsPage = () => {
     try {
       if (selectedBrand) {
         const response = await apiPut(`/brands/${selectedBrand.id}`, { name: form.name.trim(), description: form.description.trim(), website: form.website.trim() }, token);
-        setBrands((prev) => prev.map((item) => (item.id === selectedBrand.id ? response.data.data : item)));
+        const updatedBrand = normalizeResponseData(response) || selectedBrand;
+        setBrands((prev) => prev.map((item) => (item.id === selectedBrand.id ? updatedBrand : item)));
         setMessage('Brand updated successfully.');
       } else {
         const response = await apiPost('/brands', { name: form.name.trim(), description: form.description.trim(), website: form.website.trim() }, token);
-        setBrands((prev) => [response.data.data, ...prev]);
+        const created = normalizeResponseData(response) || { id: Date.now(), ...form };
+        setBrands((prev) => [created, ...prev]);
         setMessage('Brand created successfully.');
       }
       setError('');

@@ -17,6 +17,8 @@ const CategoriesPage = () => {
   const confirmModal = useModal();
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const normalizeResponseData = (response) => response?.data?.data ?? response?.data ?? response ?? null;
+
   const loadCategories = async () => {
     try {
       const response = await apiGet('/categories', token);
@@ -72,11 +74,13 @@ const CategoriesPage = () => {
     try {
       if (selectedCategory) {
         const response = await apiPut(`/categories/${selectedCategory.id}`, { name: form.name.trim(), description: form.description.trim() }, token);
-        setCategories((prev) => prev.map((item) => (item.id === selectedCategory.id ? response.data.data : item)));
+        const updatedCategory = normalizeResponseData(response) || selectedCategory;
+        setCategories((prev) => prev.map((item) => (item.id === selectedCategory.id ? updatedCategory : item)));
         setMessage('Category updated successfully.');
       } else {
         const response = await apiPost('/categories', { name: form.name.trim(), description: form.description.trim() }, token);
-        setCategories((prev) => [response.data.data, ...prev]);
+        const created = normalizeResponseData(response) || { id: Date.now(), ...form };
+        setCategories((prev) => [created, ...prev]);
         setMessage('Category created successfully.');
       }
       setError('');

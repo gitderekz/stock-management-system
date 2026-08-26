@@ -220,13 +220,13 @@ const PurchaseOrdersPage = () => {
       let response;
       if (editing) {
         response = await apiPut(`/purchase-orders/${editing.id}`, payload, token);
-        setPurchaseOrders((prev) =>
-          prev.map((item) => (item.id === editing.id ? response.data : item))
-        );
+        const updated = response.data || response;
+        setPurchaseOrders((prev) => prev.map((item) => (item.id === editing.id ? updated : item)));
         setMessage('Purchase order updated successfully.');
       } else {
         response = await apiPost('/purchase-orders', payload, token);
-        setPurchaseOrders((prev) => [response.data, ...prev]);
+        const created = response.data || response;
+        setPurchaseOrders((prev) => [created, ...prev]);
         setMessage('Purchase order created successfully.');
       }
 
@@ -278,6 +278,37 @@ const PurchaseOrdersPage = () => {
   const getProductName = (productId) => {
     const product = products.find((p) => p.id === productId);
     return product ? `${product.name} (${product.sku || ''})` : `Product #${productId}`;
+  };
+
+  const getSupplierName = (po) => {
+    if (!po) return 'Unknown';
+    if (typeof po.supplier === 'string') return po.supplier;
+    if (po.supplier && typeof po.supplier === 'object') return po.supplier.name || 'Unknown';
+    if (po.supplier_name) return po.supplier_name;
+    return 'Unknown';
+  };
+
+  const handleStatusSave = async () => {
+    if (!selectedPO) return;
+
+    try {
+      const resp = await apiPut(
+        `/purchase-orders/${selectedPO.id}`,
+        {
+          po_status: selectedPO.po_status,
+          payment_status: selectedPO.payment_status,
+          delivery_status: selectedPO.delivery_status,
+        },
+        token
+      );
+      const updatedPO = resp.data || selectedPO;
+      setSelectedPO(null);
+      setPurchaseOrders((prev) => prev.map((p) => (p.id === updatedPO.id ? updatedPO : p)));
+      setMessage('Status updated successfully.');
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to update status');
+    }
   };
 
   return (
@@ -348,7 +379,7 @@ const PurchaseOrdersPage = () => {
               {visibleRows.map((po) => (
                 <tr key={po.id}>
                   <td className="font-weight-bold">{po.po_number}</td>
-                  <td>{po.supplier}</td>
+                  <td>{getSupplierName(po)}</td>
                   <td>{po.item_count || 0} items</td>
                   <td>TZS {Number(po.total_amount || 0).toLocaleString()}</td>
                   <td>
@@ -422,7 +453,7 @@ const PurchaseOrdersPage = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', marginBottom: '20px' }}>
               <div>
                 <label style={{ fontWeight: 'bold', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Supplier</label>
-                <div style={{ marginTop: '5px', fontSize: '14px' }}>{selectedPO.supplier?.name || selectedPO.supplier || 'Unknown'}</div>
+                <div style={{ marginTop: '5px', fontSize: '14px' }}>{getSupplierName(selectedPO)}</div>
               </div>
               <div>
                 <label style={{ fontWeight: 'bold', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>PO Status</label>
@@ -537,25 +568,7 @@ const PurchaseOrdersPage = () => {
                 <div style={{ marginLeft: 'auto' }}>
                   <button
                     className="btn btn-primary"
-                    onClick={async () => {
-                      try {
-                        const resp = await apiPut(
-                          `/purchase-orders/${selectedPO.id}`,
-                          {
-                            po_status: selectedPO.po_status,
-                            payment_status: selectedPO.payment_status,
-                            delivery_status: selectedPO.delivery_status,
-                          },
-                          token
-                        );
-                        const updatedPO = resp.data || selectedPO;
-                        setSelectedPO(updatedPO);
-                        setPurchaseOrders((prev) => prev.map((p) => (p.id === updatedPO.id ? updatedPO : p)));
-                        setMessage('Status updated');
-                      } catch (err) {
-                        setError(err.message || 'Failed to update status');
-                      }
-                    }}
+                    onClick={handleStatusSave}
                   >
                     Save Status
                   </button>

@@ -52,6 +52,7 @@ const BatchTrackingPage = () => {
     let result = batches.map((batch) => ({
       ...batch,
       age: calculateBatchAge(batch.received_at),
+      total_landed_cost: (batch.landed_cost || 0) * (batch.quantity_received || 0),
     }));
 
     // Apply search filter
@@ -59,9 +60,9 @@ const BatchTrackingPage = () => {
     if (query) {
       result = result.filter((batch) =>
         (batch.batch_number || '').toLowerCase().includes(query) ||
-        (batch.product_name || '').toLowerCase().includes(query) ||
-        (batch.location_name || '').toLowerCase().includes(query) ||
-        (batch.sku || '').toLowerCase().includes(query)
+        (batch.product || '').toLowerCase().includes(query) ||
+        (batch.location || '').toLowerCase().includes(query) ||
+        (batch.po_number || '').toLowerCase().includes(query)
       );
     }
 
@@ -75,10 +76,10 @@ const BatchTrackingPage = () => {
 
     // Apply quantity filters
     if (filters.minQuantity) {
-      result = result.filter((batch) => (batch.quantity || batch.quantity_remaining || 0) >= Number(filters.minQuantity));
+      result = result.filter((batch) => (batch.quantity_remaining || 0) >= Number(filters.minQuantity));
     }
     if (filters.maxQuantity) {
-      result = result.filter((batch) => (batch.quantity || batch.quantity_remaining || 0) <= Number(filters.maxQuantity));
+      result = result.filter((batch) => (batch.quantity_remaining || 0) <= Number(filters.maxQuantity));
     }
 
     // Apply sorting
@@ -97,10 +98,10 @@ const BatchTrackingPage = () => {
         sorted.sort((a, b) => b.age - a.age);
         break;
       case 'quantity_asc':
-        sorted.sort((a, b) => (a.quantity || a.quantity_remaining || 0) - (b.quantity || b.quantity_remaining || 0));
+        sorted.sort((a, b) => (a.quantity_remaining || 0) - (b.quantity_remaining || 0));
         break;
       case 'quantity_desc':
-        sorted.sort((a, b) => (b.quantity || b.quantity_remaining || 0) - (a.quantity || a.quantity_remaining || 0));
+        sorted.sort((a, b) => (b.quantity_remaining || 0) - (a.quantity_remaining || 0));
         break;
       default:
         break;
@@ -135,8 +136,8 @@ const BatchTrackingPage = () => {
 
   const stats = useMemo(() => {
     const totalBatches = batches.length;
-    const totalQuantity = batches.reduce((sum, batch) => sum + (batch.quantity || 0), 0);
-    const totalValue = batches.reduce((sum, batch) => sum + ((batch.unit_cost || 0) * (batch.quantity || 0)), 0);
+    const totalQuantity = batches.reduce((sum, batch) => sum + (batch.quantity_remaining || 0), 0);
+    const totalValue = batches.reduce((sum, batch) => sum + ((batch.unit_cost || 0) * (batch.quantity_remaining || 0)), 0);
     const averageAge = batches.length > 0 
       ? Math.round(batches.reduce((sum, batch) => sum + calculateBatchAge(batch.received_at), 0) / batches.length)
       : 0;
@@ -278,38 +279,42 @@ const BatchTrackingPage = () => {
               <tr>
                 <th>Batch #</th>
                 <th>Product</th>
-                <th>SKU</th>
                 <th>Location</th>
-                <th>Quantity</th>
+                <th>Qty Received</th>
+                <th>Qty Remaining</th>
                 <th>Unit Cost</th>
-                <th>Total Cost</th>
+                <th>Unit Selling</th>
+                <th>Landed Cost</th>
+                <th>Total Landed</th>
                 <th>Received</th>
                 <th>Age</th>
-                <th>FIFO Status</th>
+                <th>FIFO</th>
               </tr>
             </thead>
             <tbody>
               {visibleBatches.map((batch, index) => {
                 const ageStatus = getAgeStatus(batch.age);
-                const totalCost = (batch.unit_cost || 0) * (batch.quantity || 0);
+                const totalLandedCost = (batch.landed_cost || 0) * (batch.quantity_received || 0);
                 return (
                   <tr key={batch.id}>
                     <td className="font-weight-bold">{batch.batch_number}</td>
-                    <td>{batch.product_name || 'Unknown'}</td>
-                    <td><code>{batch.sku || '-'}</code></td>
-                    <td>{batch.location_name || 'Unknown'}</td>
-                    <td>{(batch.quantity || 0).toLocaleString()}</td>
+                    <td>{batch.product || 'Unknown'}</td>
+                    <td>{batch.location || 'Unknown'}</td>
+                    <td>{(batch.quantity_received || 0).toLocaleString()}</td>
+                    <td><strong>{(batch.quantity_remaining || 0).toLocaleString()}</strong></td>
                     <td>TZS {(batch.unit_cost || 0).toLocaleString()}</td>
-                    <td>TZS {totalCost.toLocaleString()}</td>
+                    <td>TZS {(batch.unit_selling_price || 0).toLocaleString()}</td>
+                    <td>TZS {(batch.landed_cost || 0).toLocaleString()}</td>
+                    <td>TZS {totalLandedCost.toLocaleString()}</td>
                     <td>{new Date(batch.received_at).toLocaleDateString()}</td>
                     <td>
                       <span className={`badge ${ageStatus.className}`}>
-                        {batch.age} days
+                        {batch.age}d
                       </span>
                     </td>
                     <td>
                       <span className="badge badge-info">
-                        Position: {index + 1}
+                        {index + 1}
                       </span>
                     </td>
                   </tr>

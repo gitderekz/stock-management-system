@@ -21,11 +21,11 @@ async function start() {
     await sequelize.sync({ alter: false });
     console.log('Sequelize model synchronization completed safely.');
 
-    await seedDatabase();
-    console.log('Seed data initialization completed.');
+    // await seedDatabase();
+    // console.log('Seed data initialization completed.');
 
-    await seedPhase2();
-    console.log('Phase 2 seed data initialization completed.');
+    // await seedPhase2();
+    // console.log('Phase 2 seed data initialization completed.');
 
     server.listen(env.port, () => {
       console.log(`Stock Management System API running on port ${env.port}`);

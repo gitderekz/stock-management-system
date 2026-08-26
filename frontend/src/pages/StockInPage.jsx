@@ -144,6 +144,14 @@ const StockInPage = () => {
     if (!selectedPO || !selectedPO.items || selectedPO.items.length === 0) {
       return <div style={{ padding: '10px', textAlign: 'center', color: '#999' }}>No items selected</div>;
     }
+    const rows = selectedPO.items.map((item, idx) => {
+      const product = products.find((p) => p.id === (item.product_id || item.productId));
+      const qty = Number(item.quantity || 0);
+      const unitCost = Number(item.unit_cost || item.unitCost || 0);
+      const total = qty * unitCost;
+      return { product, qty, unitCost, total, idx };
+    });
+    const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '20px' }}>
         <thead>
@@ -155,19 +163,20 @@ const StockInPage = () => {
           </tr>
         </thead>
         <tbody>
-          {selectedPO.items.map((item, idx) => {
-            const product = products.find((p) => p.id === (item.product_id || item.productId));
-            const unitCost = parseFloat(item.unit_cost || item.unitCost || 0);
-            const qty = parseInt(item.quantity || 0);
-            return (
-              <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '8px' }}>{product?.name || `Product #${item.product_id || item.productId}`}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>{qty}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>TZS {unitCost.toLocaleString()}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>TZS {(unitCost * qty).toLocaleString()}</td>
-              </tr>
-            );
-          })}
+          {rows.map(({ product, qty, unitCost, total, idx }) => (
+            <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+              <td style={{ padding: '8px' }}>{product?.name || `Product #${selectedPO.items[idx].product_id || selectedPO.items[idx].productId}`}</td>
+              <td style={{ padding: '8px', textAlign: 'center' }}>{qty}</td>
+              <td style={{ padding: '8px', textAlign: 'center' }}>TZS {unitCost.toLocaleString()}</td>
+              <td style={{ padding: '8px', textAlign: 'center' }}>TZS {total.toLocaleString()}</td>
+            </tr>
+          ))}
+          <tr style={{ borderTop: '2px solid #ddd', background: '#f8fafc', fontWeight: 700 }}>
+            <td style={{ padding: '8px' }}>Total</td>
+            <td style={{ padding: '8px', textAlign: 'center' }}>{rows.reduce((sum, row) => sum + row.qty, 0)}</td>
+            <td style={{ padding: '8px', textAlign: 'center' }}>—</td>
+            <td style={{ padding: '8px', textAlign: 'center' }}>TZS {grandTotal.toLocaleString()}</td>
+          </tr>
         </tbody>
       </table>
     );
@@ -229,7 +238,6 @@ const StockInPage = () => {
         return;
       }
 
-      // Send a single request with items array to create batches server-side
       const payload = {
         purchase_order_id: form.purchaseOrderId || null,
         location_id: form.locationId || locations[0]?.id || null,
@@ -248,20 +256,29 @@ const StockInPage = () => {
 
       const response = await apiPost('/stock/in', payload, token);
       const result = response.data || response;
-      if (result && result.success) {
-        const batches = result.data?.batches || [];
+      
+      // Check for successful response and batches in multiple possible structures
+      const batches = result?.data?.batches || result?.batches || [];
+      const isSuccess = result?.success === true || (response?.status >= 200 && response?.status < 300) || batches.length > 0;
+      
+      if (isSuccess && batches.length > 0) {
         setCreatedBatches(batches.map((b) => ({ batch_number: b.batch_number || b.id, product_id: null, quantity_received: null })));
-        setMessage('Goods received and batches created');
+        setMessage('Goods received and batches created successfully');
         setError('');
         setForm(initialForm);
         setSelectedPO(null);
-        loadStockIn();
-        setTimeout(() => {
-          modal.close();
-          setMessage('');
-        }, 1800);
+        await loadStockIn();
+        modal.close();
+      } else if (result?.success || response?.status >= 200 && response?.status < 300) {
+        // Success response but possibly no batches returned (edge case)
+        setMessage(result?.message || 'Goods received');
+        setError('');
+        setForm(initialForm);
+        setSelectedPO(null);
+        await loadStockIn();
+        modal.close();
       } else {
-        setError(result?.message || 'No batches were created');
+        setError(result?.message || 'Failed to receive goods');
       }
     } catch (err) {
       setError(err.message);
@@ -327,6 +344,16 @@ const StockInPage = () => {
       'System'
     );
   };
+
+  // Filter purchase orders that are ready to receive (COMPLETED, PAID, RECEIVED)
+  // Exclude POs that have already been received to prevent duplicate receipts
+  const readyPurchaseOrders = purchaseOrders.filter((po) => {
+    const poStatus = String(po.po_status || '').toUpperCase();
+    const paymentStatus = String(po.payment_status || '').toUpperCase();
+    const deliveryStatus = String(po.delivery_status || '').toUpperCase();
+    const alreadyReceived = stockInRecords.some(r => r.purchase_order_id === po.id);
+    return poStatus === 'COMPLETED' && paymentStatus === 'PAID' && deliveryStatus === 'RECEIVED' && !alreadyReceived;
+  });
 
   return (
     <div className="content-space">
@@ -484,11 +511,9 @@ const StockInPage = () => {
                   required
                 >
                   <option value="">Select PO to receive</option>
-                  {purchaseOrders.map((po) => (
+                  {readyPurchaseOrders.map((po) => (
                     <option key={po.id} value={po.id}>
-                      {po.po_number || `PO-${po.id}`} from{' '}
-                      {po.supplier?.name || 'Unknown'} - Status:{' '}
-                      {po.delivery_status}
+                      {po.po_number || `PO-${po.id}`} from {po.supplier?.name || po.supplier || 'Unknown'}
                     </option>
                   ))}
                 </select>
