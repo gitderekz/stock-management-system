@@ -289,6 +289,7 @@ const StockTransferPage = () => {
   const [form, setForm] = useState({ productId: '', sourceLocationId: '', destinationLocationId: '', quantity: 0, reference: '' });
   const [message, setMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [showTransferModal, setShowTransferModal] = useState(false);
 
   const loadRecords = async () => {
     try {
@@ -323,6 +324,7 @@ const StockTransferPage = () => {
       setMessage('Transfer created successfully.');
       setSubmitError('');
       setForm({ productId: '', sourceLocationId: '', destinationLocationId: '', quantity: 0, reference: '' });
+      setShowTransferModal(false);
       loadRecords();
     } catch (err) {
       setSubmitError(err.message);
@@ -338,6 +340,7 @@ const StockTransferPage = () => {
             <div className="panel-label">Stock Operations</div>
             <h3 className="panel-title">Transfers</h3>
           </div>
+          <button className="btn btn-primary" onClick={() => setShowTransferModal(true)}>Create Transfer</button>
         </div>
         {message && <div className="alert alert-success">{message}</div>}
         {submitError && <div className="alert alert-danger">{submitError}</div>}
@@ -379,46 +382,60 @@ const StockTransferPage = () => {
           </div>
         )}
 
-        <form className="form-grid" onSubmit={submitTransfer}>
-          <div className="field-group">
-            <label className="field-label">Product</label>
-            <select className="text-input" name="productId" value={form.productId} onChange={handleChange} required>
-              <option value="">Select a product</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
+        {/* Transfer Modal */}
+        {showTransferModal && (
+          <div className="modal-overlay" onClick={() => { setShowTransferModal(false); setForm({ productId: '', sourceLocationId: '', destinationLocationId: '', quantity: 0, reference: '' }); }}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3 className="modal-title">Create Transfer</h3>
+                <button className="modal-close" onClick={() => { setShowTransferModal(false); setForm({ productId: '', sourceLocationId: '', destinationLocationId: '', quantity: 0, reference: '' }); }}>×</button>
+              </div>
+              <div className="modal-body">
+                <form className="form-grid" onSubmit={submitTransfer}>
+                  <div className="field-group">
+                    <label className="field-label">Product</label>
+                    <select className="text-input" name="productId" value={form.productId} onChange={handleChange} required>
+                      <option value="">Select a product</option>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>{product.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Source Location</label>
+                    <select className="text-input" name="sourceLocationId" value={form.sourceLocationId} onChange={handleChange} required>
+                      <option value="">Select source</option>
+                      {locations.map((location) => (
+                        <option key={location.id} value={location.id}>{location.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Destination Location</label>
+                    <select className="text-input" name="destinationLocationId" value={form.destinationLocationId} onChange={handleChange} required>
+                      <option value="">Select destination</option>
+                      {locations.map((location) => (
+                        <option key={location.id} value={location.id}>{location.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Quantity</label>
+                    <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Reference</label>
+                    <input className="text-input" name="reference" value={form.reference} onChange={handleChange} />
+                  </div>
+                  <div className="modal-actions">
+                    <button type="button" className="btn btn-ghost" onClick={() => { setShowTransferModal(false); setForm({ productId: '', sourceLocationId: '', destinationLocationId: '', quantity: 0, reference: '' }); }}>Cancel</button>
+                    <button type="submit" className="btn btn-primary">Create Transfer</button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
-          <div className="field-group">
-            <label className="field-label">Source Location</label>
-            <select className="text-input" name="sourceLocationId" value={form.sourceLocationId} onChange={handleChange} required>
-              <option value="">Select source</option>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>{location.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field-group">
-            <label className="field-label">Destination Location</label>
-            <select className="text-input" name="destinationLocationId" value={form.destinationLocationId} onChange={handleChange} required>
-              <option value="">Select destination</option>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>{location.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field-group">
-            <label className="field-label">Quantity</label>
-            <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required />
-          </div>
-          <div className="field-group">
-            <label className="field-label">Reference</label>
-            <input className="text-input" name="reference" value={form.reference} onChange={handleChange} />
-          </div>
-          <div className="form-actions">
-            <button type="submit" className="btn btn-primary">Create Transfer</button>
-          </div>
-        </form>
+        )}
       </article>
     </section>
   );
@@ -431,6 +448,7 @@ const DamagedPage = () => {
   const [form, setForm] = useState({ productId: '', locationId: '', quantity: 0, reason: '' });
   const [message, setMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [showDamagedModal, setShowDamagedModal] = useState(false);
 
   const loadRecords = async () => {
     try {
@@ -462,6 +480,7 @@ const DamagedPage = () => {
       setMessage('Damaged stock recorded.');
       setSubmitError('');
       setForm({ productId: '', locationId: '', quantity: 0, reason: '' });
+      setShowDamagedModal(false);
       loadRecords();
     } catch (err) {
       setSubmitError(err.message);
@@ -477,6 +496,7 @@ const DamagedPage = () => {
             <div className="panel-label">Stock Operations</div>
             <h3 className="panel-title">Damaged Stock</h3>
           </div>
+          <button className="btn btn-danger" onClick={() => setShowDamagedModal(true)}>Record Damage</button>
         </div>
         {message && <div className="alert alert-success">{message}</div>}
         {submitError && <div className="alert alert-danger">{submitError}</div>}
@@ -516,37 +536,51 @@ const DamagedPage = () => {
           </div>
         )}
 
-        <form className="form-grid" onSubmit={submitDamage}>
-          <div className="field-group">
-            <label className="field-label">Product</label>
-            <select className="text-input" name="productId" value={form.productId} onChange={handleChange} required>
-              <option value="">Select a product</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
+        {/* Damaged Stock Modal */}
+        {showDamagedModal && (
+          <div className="modal-overlay" onClick={() => { setShowDamagedModal(false); setForm({ productId: '', locationId: '', quantity: 0, reason: '' }); }}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3 className="modal-title">Record Damaged Stock</h3>
+                <button className="modal-close" onClick={() => { setShowDamagedModal(false); setForm({ productId: '', locationId: '', quantity: 0, reason: '' }); }}>×</button>
+              </div>
+              <div className="modal-body">
+                <form className="form-grid" onSubmit={submitDamage}>
+                  <div className="field-group">
+                    <label className="field-label">Product</label>
+                    <select className="text-input" name="productId" value={form.productId} onChange={handleChange} required>
+                      <option value="">Select a product</option>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>{product.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Location</label>
+                    <select className="text-input" name="locationId" value={form.locationId} onChange={handleChange} required>
+                      <option value="">Select a location</option>
+                      {locations.map((location) => (
+                        <option key={location.id} value={location.id}>{location.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Quantity</label>
+                    <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Reason</label>
+                    <input className="text-input" name="reason" value={form.reason} onChange={handleChange} />
+                  </div>
+                  <div className="modal-actions">
+                    <button type="button" className="btn btn-ghost" onClick={() => { setShowDamagedModal(false); setForm({ productId: '', locationId: '', quantity: 0, reason: '' }); }}>Cancel</button>
+                    <button type="submit" className="btn btn-danger">Record Damage</button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
-          <div className="field-group">
-            <label className="field-label">Location</label>
-            <select className="text-input" name="locationId" value={form.locationId} onChange={handleChange} required>
-              <option value="">Select a location</option>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>{location.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field-group">
-            <label className="field-label">Quantity</label>
-            <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required />
-          </div>
-          <div className="field-group">
-            <label className="field-label">Reason</label>
-            <input className="text-input" name="reason" value={form.reason} onChange={handleChange} />
-          </div>
-          <div className="form-actions">
-            <button type="submit" className="btn btn-danger">Record Damage</button>
-          </div>
-        </form>
+        )}
       </article>
     </section>
   );
@@ -559,6 +593,7 @@ const ReturnsPage = () => {
   const [form, setForm] = useState({ productId: '', quantity: 0, reason: '' });
   const [message, setMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [showReturnsModal, setShowReturnsModal] = useState(false);
 
   const loadRecords = async () => {
     try {
@@ -589,6 +624,7 @@ const ReturnsPage = () => {
       setMessage('Return recorded successfully.');
       setSubmitError('');
       setForm({ productId: '', quantity: 0, reason: '' });
+      setShowReturnsModal(false);
       loadRecords();
     } catch (err) {
       setSubmitError(err.message);
@@ -604,6 +640,7 @@ const ReturnsPage = () => {
             <div className="panel-label">Stock Operations</div>
             <h3 className="panel-title">Returns</h3>
           </div>
+          <button className="btn btn-primary" onClick={() => setShowReturnsModal(true)}>Record Return</button>
         </div>
         {message && <div className="alert alert-success">{message}</div>}
         {submitError && <div className="alert alert-danger">{submitError}</div>}
@@ -641,28 +678,42 @@ const ReturnsPage = () => {
           </div>
         )}
 
-        <form className="form-grid" onSubmit={submitReturn}>
-          <div className="field-group">
-            <label className="field-label">Product</label>
-            <select className="text-input" name="productId" value={form.productId} onChange={handleChange} required>
-              <option value="">Select a product</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
+        {/* Returns Modal */}
+        {showReturnsModal && (
+          <div className="modal-overlay" onClick={() => { setShowReturnsModal(false); setForm({ productId: '', quantity: 0, reason: '' }); }}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3 className="modal-title">Record Return</h3>
+                <button className="modal-close" onClick={() => { setShowReturnsModal(false); setForm({ productId: '', quantity: 0, reason: '' }); }}>×</button>
+              </div>
+              <div className="modal-body">
+                <form className="form-grid" onSubmit={submitReturn}>
+                  <div className="field-group">
+                    <label className="field-label">Product</label>
+                    <select className="text-input" name="productId" value={form.productId} onChange={handleChange} required>
+                      <option value="">Select a product</option>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>{product.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Quantity</label>
+                    <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Reason</label>
+                    <input className="text-input" name="reason" value={form.reason} onChange={handleChange} />
+                  </div>
+                  <div className="modal-actions">
+                    <button type="button" className="btn btn-ghost" onClick={() => { setShowReturnsModal(false); setForm({ productId: '', quantity: 0, reason: '' }); }}>Cancel</button>
+                    <button type="submit" className="btn btn-primary">Record Return</button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
-          <div className="field-group">
-            <label className="field-label">Quantity</label>
-            <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required />
-          </div>
-          <div className="field-group">
-            <label className="field-label">Reason</label>
-            <input className="text-input" name="reason" value={form.reason} onChange={handleChange} />
-          </div>
-          <div className="form-actions">
-            <button type="submit" className="btn btn-primary">Record Return</button>
-          </div>
-        </form>
+        )}
       </article>
     </section>
   );
