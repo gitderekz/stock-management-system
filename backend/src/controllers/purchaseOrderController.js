@@ -177,12 +177,26 @@ const getPurchaseOrderDetail = async (poId) => {
 // Update PO
 const updatePurchaseOrder = async (req, res) => {
   try {
-    const { po_status, payment_status, delivery_status, total_amount, total_paid, expected_delivery, actual_delivery, notes } = req.body;
+    const {
+      supplier_id,
+      po_number,
+      po_status,
+      payment_status,
+      delivery_status,
+      total_amount,
+      total_paid,
+      expected_delivery,
+      actual_delivery,
+      notes,
+      items,
+    } = req.body;
 
     const po = await PurchaseOrder.findByPk(req.params.id);
     if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
 
-    await po.update({
+    const nextPO = await po.update({
+      supplier_id: supplier_id !== undefined ? supplier_id : po.supplier_id,
+      po_number: po_number !== undefined ? po_number : po.po_number,
       po_status: po_status || po.po_status,
       payment_status: payment_status || po.payment_status,
       delivery_status: delivery_status || po.delivery_status,
@@ -193,9 +207,58 @@ const updatePurchaseOrder = async (req, res) => {
       notes: notes !== undefined ? notes : po.notes,
     });
 
+    if (Array.isArray(items)) {
+      const existingItems = await PurchaseOrderItem.findAll({ where: { purchase_order_id: po.id } });
+      const existingMap = new Map(existingItems.map((item) => [item.id, item]));
+
+      const incomingIds = new Set();
+      for (const item of items) {
+        const payload = {
+          purchase_order_id: po.id,
+          product_id: item.product_id,
+          quantity: Number(item.quantity || 0),
+          unit_cost: Number(item.unit_cost || 0),
+          unit_selling_price: item.unit_selling_price !== undefined ? Number(item.unit_selling_price) : null,
+          shipping_per_unit: Number(item.shipping_per_unit || 0),
+          tariff_per_unit: Number(item.tariff_per_unit || 0),
+          tax_per_unit: Number(item.tax_per_unit || 0),
+          landed_cost: calculateLandedCost(
+            item.unit_cost,
+            item.shipping_per_unit,
+            item.tariff_per_unit,
+            item.tax_per_unit
+          ),
+          total_cost: Number(item.quantity || 0) * Number(item.unit_cost || 0),
+          notes: item.notes || null,
+        };
+
+        if (item.id) {
+          incomingIds.add(item.id);
+          const existingItem = existingMap.get(item.id);
+          if (existingItem) {
+            await existingItem.update(payload);
+          } else {
+            await PurchaseOrderItem.create(payload);
+          }
+        } else {
+          await PurchaseOrderItem.create(payload);
+        }
+      }
+
+      const staleItems = existingItems.filter((item) => !incomingIds.has(item.id));
+      for (const staleItem of staleItems) {
+        await staleItem.destroy();
+      }
+
+      const freshItems = await PurchaseOrderItem.findAll({ where: { purchase_order_id: po.id } });
+      const recalculatedTotal = freshItems.reduce((sum, item) => sum + Number(item.total_cost || 0), 0);
+      await nextPO.update({ total_amount: recalculatedTotal });
+    }
+
     await createLog(req.user?.id, 'PurchaseOrder', 'update', po.id, `Updated PO ${po.po_number}`, { changes: req.body }, req.ip);
 
-    res.json({ success: true, message: 'Purchase order updated', data: po });
+    const refreshed = await getPurchaseOrderDetail(po.id);
+    res.json({ success: true, message: 'Purchase order updated', data: refreshed });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

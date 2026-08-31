@@ -220,7 +220,9 @@ const PurchaseOrdersPage = () => {
       let response;
       if (editing) {
         response = await apiPut(`/purchase-orders/${editing.id}`, payload, token);
-        const updated = response.data || response;
+        // fetch fresh details to ensure items and related tables reflect server state
+        const refreshed = await loadPurchaseOrderDetails(editing.id);
+        const updated = refreshed || (response.data || response);
         setPurchaseOrders((prev) => prev.map((item) => (item.id === editing.id ? updated : item)));
         setMessage('Purchase order updated successfully.');
       } else {

@@ -178,19 +178,42 @@ const createStockOut = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Quantity must be > 0' });
     }
 
-    // Check product exists
     const product = await Product.findByPk(product_id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    // Use FIFO allocation
-    const allocations = await allocateWithFIFO(product_id, location_id, quantity);
+    let allocations = [];
+    if (Array.isArray(req.body.batch_allocations) && req.body.batch_allocations.length > 0) {
+      let remaining = Number(quantity || 0);
+      for (const ba of req.body.batch_allocations) {
+        const batchId = ba.batchId || ba.batch_id;
+        if (!batchId) continue;
+        const batch = await StockBatch.findByPk(batchId);
+        if (!batch) throw new Error(`Batch ${batchId} not found`);
+        const takeQty = Number(ba.quantity || 0);
+        if (takeQty <= 0) continue;
+        if (batch.quantity_remaining < takeQty) throw new Error(`Batch ${batch.batch_number} has insufficient quantity`);
+        const unitCost = Number(ba.unit_price ?? ba.unit_cost ?? batch.unit_selling_price ?? batch.unit_cost ?? 0);
+        allocations.push({
+          batch_id: batch.id,
+          batch_number: batch.batch_number,
+          quantity: takeQty,
+          unit_cost: unitCost,
+          total_cost: unitCost * takeQty,
+        });
+        await batch.update({ quantity_remaining: batch.quantity_remaining - takeQty });
+        remaining -= takeQty;
+      }
+      if (remaining > 0) {
+        throw new Error(`Insufficient inventory: requested ${quantity}, allocated ${Number(quantity) - remaining}`);
+      }
+    } else {
+      allocations = await allocateWithFIFO(product_id, location_id, quantity);
+    }
 
-    // Calculate total cost from allocations
-    const totalCost = allocations.reduce((sum, a) => sum + a.total_cost, 0);
+    const totalCost = allocations.reduce((sum, a) => sum + Number(a.total_cost || 0), 0);
 
-    // Create stock out record
     const stockOut = await StockOut.create({
       referenceNo: reference || `SO-${Date.now()}`,
       recipient: purpose || 'General issue',
@@ -202,19 +225,17 @@ const createStockOut = async (req, res) => {
       status: 'ISSUED',
     });
 
-    // create a StockOutItem per allocation so batchId/price are preserved
     for (const a of allocations) {
       await StockOutItem.create({
         stockOutId: stockOut.id,
         productId: product_id,
         batchId: a.batch_id || null,
         quantity: a.quantity,
-        price: a.unit_cost || 0,
+        price: Number(a.unit_cost || 0),
         serialNumber: reference || null,
       });
     }
 
-    // Create stock movement record
     const movement = await StockMovement.create({
       type: 'out',
       product_id,
@@ -225,7 +246,7 @@ const createStockOut = async (req, res) => {
       unit_cost: totalCost / quantity,
       total_cost: totalCost,
       purpose: purpose || 'Stock out',
-      reference: reference || stockOut.reference_no,
+      reference: reference || stockOut.referenceNo,
       issued_by: req.user?.id || null,
       created_by: req.user?.id || null,
       batch_allocations: JSON.stringify(allocations),
@@ -235,15 +256,7 @@ const createStockOut = async (req, res) => {
 
     await syncProductQuantity(product_id);
 
-    await createLog(
-      req.user?.id,
-      'StockOut',
-      'create',
-      stockOut.id,
-      `Stock out created: ${product.name} x${quantity}`,
-      { product_id, location_id, quantity, allocations },
-      req.ip
-    );
+    await createLog(req.user?.id, 'StockOut', 'create', stockOut.id, `Stock out created: ${product.name} x${quantity}`, { product_id, location_id, quantity, allocations }, req.ip);
 
     res.status(201).json({
       success: true,
@@ -268,25 +281,41 @@ const createStockOutManual = async (req, res) => {
     const { product_id, location_id, quantity, batch_allocations, purpose, reference } = req.body;
 
     if (!product_id || !location_id || !batch_allocations || batch_allocations.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'product_id, location_id, and batch_allocations required',
-      });
+      return res.status(400).json({ success: false, message: 'product_id, location_id, and batch_allocations required' });
     }
 
-    // Check product exists
     const product = await Product.findByPk(product_id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    // Manual allocation
-    const allocations = await allocateManual(product_id, location_id, batch_allocations);
+    let allocations = [];
+    if (Array.isArray(batch_allocations) && batch_allocations.length > 0 && batch_allocations.some((ba) => ba.unit_price !== undefined || ba.unit_cost !== undefined)) {
+      for (const ba of batch_allocations) {
+        const batchId = ba.batch_id || ba.batchId;
+        if (!batchId) continue;
+        const batch = await StockBatch.findByPk(batchId);
+        if (!batch) throw new Error(`Batch ${batchId} not found`);
+        const takeQty = Number(ba.quantity || 0);
+        if (takeQty <= 0) continue;
+        if (batch.quantity_remaining < takeQty) throw new Error(`Batch ${batch.batch_number} has insufficient quantity`);
+        const unitPrice = Number(ba.unit_price ?? ba.unit_cost ?? batch.unit_selling_price ?? batch.unit_cost ?? 0);
+        allocations.push({
+          batch_id: batch.id,
+          batch_number: batch.batch_number,
+          quantity: takeQty,
+          unit_cost: unitPrice,
+          total_cost: unitPrice * takeQty,
+        });
+        await batch.update({ quantity_remaining: batch.quantity_remaining - takeQty });
+      }
+    } else {
+      allocations = await allocateManual(product_id, location_id, batch_allocations);
+    }
 
     const totalQty = allocations.reduce((sum, a) => sum + a.quantity, 0);
     const totalCost = allocations.reduce((sum, a) => sum + a.total_cost, 0);
 
-    // create StockOut record
     const stockOut = await StockOut.create({
       referenceNo: reference || `SO-${Date.now()}`,
       recipient: purpose || 'Manual issue',
@@ -298,19 +327,17 @@ const createStockOutManual = async (req, res) => {
       status: 'ISSUED',
     });
 
-    // create StockOutItem rows for manual allocations
     for (const a of allocations) {
       await StockOutItem.create({
         stockOutId: stockOut.id,
         productId: product_id,
         batchId: a.batch_id || null,
         quantity: a.quantity,
-        price: a.unit_cost || 0,
+        price: Number(a.unit_cost || 0),
         serialNumber: reference || null,
       });
     }
 
-    // Create stock movement record
     const movement = await StockMovement.create({
       type: 'out',
       product_id,
@@ -328,15 +355,7 @@ const createStockOutManual = async (req, res) => {
 
     await syncProductQuantity(product_id);
 
-    await createLog(
-      req.user?.id,
-      'StockMovement',
-      'create',
-      movement.id,
-      `Stock out (manual): ${product.name} x${totalQty}`,
-      { product_id, location_id, allocations },
-      req.ip
-    );
+    await createLog(req.user?.id, 'StockMovement', 'create', movement.id, `Stock out (manual): ${product.name} x${totalQty}`, { product_id, location_id, allocations }, req.ip);
 
     res.status(201).json({
       success: true,

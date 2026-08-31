@@ -155,13 +155,21 @@ const StockOutPage = () => {
       allBatchesAllocated: allocation,
     });
     setError('');
-    setForm((prev) => ({
-      ...prev,
-      selectedBatches: allocation.map((a) => ({
-        batchId: a.batchId,
-        quantity: a.quantity,
-      })),
-    }));
+    // include unit price by default and keep allocation editable
+    const selected = allocation.map((a) => ({ batchId: a.batchId, quantity: a.quantity, unit_price: a.unitCost }));
+    setForm((prev) => ({ ...prev, selectedBatches: selected }));
+  };
+
+  const updateAllocationUnitPrice = (index, value) => {
+    const price = Number(value) || 0;
+    setAllocationResult((prev) => {
+      if (!prev) return prev;
+      const allocation = prev.allocation.map((it, idx) => idx === index ? { ...it, unitCost: price, totalCost: (it.quantity || 0) * price } : it);
+      const totalCost = allocation.reduce((s, it) => s + (it.totalCost || 0), 0);
+      // sync selectedBatches in form
+      setForm((fprev) => ({ ...fprev, selectedBatches: allocation.map((a) => ({ batchId: a.batchId, quantity: a.quantity, unit_price: a.unitCost })) }));
+      return { ...prev, allocation, totalCost };
+    });
   };
 
   const handleManualBatchSelect = (batchId, quantity) => {
@@ -177,11 +185,12 @@ const StockOutPage = () => {
           ),
         };
       } else {
+        const batch = batches.find((bb) => bb.id === batchId) || {};
         return {
           ...prev,
           selectedBatches: [
             ...prev.selectedBatches,
-            { batchId, quantity },
+            { batchId, quantity, unit_price: Number(batch.unit_selling_price ?? batch.unit_cost ?? 0) },
           ],
         };
       }
@@ -662,10 +671,19 @@ const StockOutPage = () => {
                         </td>
                         <td>{item.condition}</td>
                         <td>{item.quantity}</td>
-                        <td>TZS {Number(item.unitCost).toLocaleString()}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={Number(item.unitCost || 0)}
+                            onChange={(e) => updateAllocationUnitPrice(idx, e.target.value)}
+                            style={{ width: '120px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd' }}
+                          />
+                        </td>
                         <td>
                           TZS{' '}
-                          {Number(item.totalCost).toLocaleString()}
+                          {Number((item.totalCost || (item.quantity || 0) * (item.unitCost || 0))).toLocaleString()}
                         </td>
                       </tr>
                     ))}
