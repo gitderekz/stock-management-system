@@ -226,15 +226,34 @@ const StockOutPage = () => {
           : '/stock/out/manual';
 
       const response = await apiPost(endpoint, payload, token);
-      setStockOutRecords((prev) => [response.data, ...prev]);
+      const receiptData = response?.data || {};
+      const receipt = {
+        id: receiptData.stock_out_id || receiptData.movement_id || Date.now(),
+        reference: form.reference || receiptData.reference || `SO-${receiptData.stock_out_id || receiptData.movement_id || Date.now()}`,
+        product_id: Number(form.productId),
+        location_id: Number(form.locationId),
+        quantity: Number(receiptData.quantity || form.quantity || 0),
+        purpose: form.purpose,
+        total_cost: Number(receiptData.total_cost || allocationResult?.totalCost || 0),
+        issued_by: user?.fullName || user?.name || 'System',
+        issued_at: new Date().toISOString(),
+        allocations: receiptData.allocations || allocationResult?.allocation || form.selectedBatches.map((item) => ({
+          batch_number: item.batchId,
+          quantity: item.quantity,
+          unit_price: item.unit_price || 0,
+        })),
+      };
+
+      setStockOutRecords((prev) => [receiptData, ...prev]);
       setMessage('Stock issued successfully!');
       setError('');
       setForm(initialForm);
       setAllocationResult(null);
+      printStockOutReceipt(receipt);
       setTimeout(() => {
         modal.close();
         setMessage('');
-      }, 2000);
+      }, 1500);
     } catch (err) {
       setError(err.message);
     }
@@ -303,6 +322,104 @@ const StockOutPage = () => {
   const getDetailTableRows = (record) => {
     const rows = record?.allocations || record?.batch_allocations || record?.items || [];
     return Array.isArray(rows) ? rows : [];
+  };
+
+  const printStockOutReceipt = (record) => {
+    const source = record || viewingStockOut;
+    if (!source) return;
+
+    const detailRows = getDetailTableRows(source);
+    const totalQty = Number(source.quantity || detailRows.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0) || 0);
+    const totalValue = Number(source.total_cost || source.cost_fifo || detailRows.reduce((sum, item) => sum + Number((item.unit_price || item.unitCost || item.price || 0) * (item.quantity || item.qty || 0)), 0) || 0);
+    const locationName = getLocationName(source.location_id || source.location?.id || source.locationId);
+    const productName = getProductName(source.product_id || source.product?.id || source.productId || source.items?.[0]?.productId);
+
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) return;
+
+    const rowsHtml = detailRows.length
+      ? detailRows.map((entry, idx) => `
+          <tr>
+            <td>${entry.batch_number || entry.batchNo || entry.batchId || `Batch ${idx + 1}`}</td>
+            <td>${entry.quantity || entry.qty || 0}</td>
+            <td>TZS ${Number(entry.unit_price || entry.unitCost || entry.price || 0).toLocaleString()}</td>
+            <td>TZS ${Number((entry.quantity || entry.qty || 0) * (entry.unit_price || entry.unitCost || entry.price || 0)).toLocaleString()}</td>
+          </tr>
+        `).join('')
+      : `
+          <tr>
+            <td colspan="4">No allocation details available</td>
+          </tr>
+        `;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Stock Out Receipt</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 32px; }
+            .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; }
+            .title { font-size: 26px; font-weight: 700; }
+            .meta { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px 18px; margin-bottom: 18px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th, td { border: 1px solid #cbd5e1; padding: 10px 12px; text-align: left; }
+            th { background: #f1f5f9; }
+            .totals { margin-top: 18px; text-align: right; font-weight: 700; }
+            @media print { body { margin: 12mm; } button { display: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="top">
+            <div>
+              <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b;">StockFlow Inventory OS</div>
+              <div class="title">Stock Out Receipt</div>
+            </div>
+            <div style="text-align: right; font-size: 12px; color: #475569;">
+              <div>Ref: ${source.reference || `SO-${source.id}`}</div>
+              <div>${new Date(source.issued_at || source.created_at || Date.now()).toLocaleDateString()}</div>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div><strong>Product:</strong> ${productName}</div>
+            <div><strong>Location:</strong> ${locationName}</div>
+            <div><strong>Quantity:</strong> ${totalQty}</div>
+            <div><strong>Purpose:</strong> ${source.purpose || '—'}</div>
+            <div><strong>Issued By:</strong> ${source.issuer?.fullName || source.issued_by || 'System'}</div>
+            <div><strong>Reference:</strong> ${source.reference || `SO-${source.id}`}</div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Batch</th>
+                <th>Qty</th>
+                <th>Unit Selling Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+
+          <div class="totals">Total Value: TZS ${Number(totalValue).toLocaleString()}</div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 300);
+  };
+
+  const getStockOutTotalValue = (record) => {
+    const rows = getDetailTableRows(record);
+    if (!rows.length) return Number(record.total_cost || record.cost_fifo || 0);
+    return rows.reduce((sum, item) => {
+      const unitPrice = Number(item.unit_price || item.unitCost || item.price || 0);
+      const qty = Number(item.quantity || item.qty || 0);
+      return sum + (unitPrice * qty);
+    }, 0);
   };
 
   return (
@@ -822,7 +939,8 @@ const StockOutPage = () => {
               </>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px', gap: 8 }}>
+              <button className="btn btn-light" onClick={() => printStockOutReceipt(viewingStockOut)}>Print Receipt</button>
               <button className="btn btn-ghost" onClick={() => viewModal.close()}>Close</button>
             </div>
           </div>

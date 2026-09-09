@@ -4,11 +4,12 @@ const { createLog } = require('./logsController');
 
 const getDashboard = async (req, res) => {
   const totalProducts = await Product.count();
-  const stockValueRow = await Product.findOne({
-    attributes: [[sequelize.fn('SUM', sequelize.literal('price * quantity')), 'totalStockValue']],
+  // Calculate total stock value from batches (quantity_remaining * landed_cost if available, else unit_cost)
+  const batchValueRow = await require('../models').StockBatch.findOne({
+    attributes: [[sequelize.fn('SUM', sequelize.literal("COALESCE(landed_cost, unit_cost) * quantity_remaining")), 'totalStockValue']],
     raw: true,
   });
-  const totalStockValue = Number(stockValueRow.totalStockValue || 0);
+  const totalStockValue = Number(batchValueRow?.totalStockValue || 0);
   const lowStockAlerts = await Product.count({ where: { quantity: { [Op.lte]: 5 } } });
   const damagedItems = await StockMovement.count({ where: { type: 'damage' } });
 

@@ -30,9 +30,11 @@ const ProductsPage = () => {
   const [editing, setEditing] = useState(null);
   const [imageFiles, setImageFiles] = useState([]);
   const [videoFiles, setVideoFiles] = useState([]);
+  const [existingImages, setExistingImages] = useState([]);
+  const [existingVideos, setExistingVideos] = useState([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  // Advanced filters
+
   const [filters, setFilters] = useState({
     categoryId: '',
     brandId: '',
@@ -44,7 +46,9 @@ const ProductsPage = () => {
     maxQuantity: '',
     showLowStock: false,
   });
+
   const [selectedProducts, setSelectedProducts] = useState(new Set());
+
   const loadProducts = async () => {
     try {
       const response = await apiGet('/products', token);
@@ -81,6 +85,16 @@ const ProductsPage = () => {
     }
   };
 
+  const resetMediaFields = () => {
+    setImageFiles([]);
+    setVideoFiles([]);
+    setExistingImages([]);
+    setExistingVideos([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   useEffect(() => {
     loadProducts();
     loadCategories();
@@ -88,7 +102,6 @@ const ProductsPage = () => {
     loadSuppliers();
   }, []);
 
-  // simple pagination hook for large product lists
   const usePaginatedRows = (rows, pageSize = 12) => {
     const [page, setPage] = useState(1);
     useEffect(() => setPage(1), [rows?.length]);
@@ -102,27 +115,27 @@ const ProductsPage = () => {
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const query = search.toLowerCase().trim();
-      const matchesSearch = !query || 
+      const matchesSearch = !query ||
         product.name.toLowerCase().includes(query) ||
         (product.brand || '').toLowerCase().includes(query) ||
         (product.category || '').toLowerCase().includes(query) ||
         (product.serialCode || '').toLowerCase().includes(query);
-      
+
       const matchesCategory = !filters.categoryId || product.categoryId === Number(filters.categoryId);
       const matchesBrand = !filters.brandId || product.brandId === Number(filters.brandId);
       const matchesSupplier = !filters.supplierId || product.supplierId === Number(filters.supplierId);
       const matchesCondition = !filters.condition || product.condition === filters.condition;
-      
+
       const matchesPrice = (!filters.minPrice || (product.price || 0) >= Number(filters.minPrice)) &&
         (!filters.maxPrice || (product.price || 0) <= Number(filters.maxPrice));
-      
+
       const matchesQuantity = (!filters.minQuantity || (product.quantity || 0) >= Number(filters.minQuantity)) &&
         (!filters.maxQuantity || (product.quantity || 0) <= Number(filters.maxQuantity));
-      
+
       const matchesLowStock = !filters.showLowStock || (product.quantity || 0) < 10;
-      
-      return matchesSearch && matchesCategory && matchesBrand && matchesSupplier && 
-             matchesCondition && matchesPrice && matchesQuantity && matchesLowStock;
+
+      return matchesSearch && matchesCategory && matchesBrand && matchesSupplier &&
+        matchesCondition && matchesPrice && matchesQuantity && matchesLowStock;
     });
   }, [products, search, filters]);
 
@@ -140,6 +153,8 @@ const ProductsPage = () => {
   const openProductModal = (product = null) => {
     if (product) {
       setEditing(product);
+      setExistingImages(product.images || []);
+      setExistingVideos(product.videos || []);
       setForm({
         name: product.name,
         categoryId: product.categoryId || '',
@@ -152,8 +167,12 @@ const ProductsPage = () => {
       });
     } else {
       setEditing(null);
+      setExistingImages([]);
+      setExistingVideos([]);
       setForm(initialForm);
     }
+    setImageFiles([]);
+    setVideoFiles([]);
     setError('');
     setMessage('');
     modal.open();
@@ -193,6 +212,8 @@ const ProductsPage = () => {
         : await apiPost('/products', payload, token);
 
       const created = normalizeResponseData(response) || payload;
+      const productId = created.id || editing?.id;
+
       if (editing) {
         setProducts((prev) => prev.map((item) => (item.id === editing.id ? created : item)));
         setMessage('Product updated successfully.');
@@ -200,25 +221,28 @@ const ProductsPage = () => {
         setProducts((prev) => [created, ...prev]);
         setMessage('Product added successfully.');
       }
-      // upload media if present
+
       try {
         if (imageFiles && imageFiles.length > 0) {
           for (const f of imageFiles) {
             const fd = new FormData();
             fd.append('file', f, f.name);
-            await apiUpload(`/products/${created.id}/images`, fd, token);
+            await apiUpload(`/products/${productId}/images`, fd, token);
           }
         }
         if (videoFiles && videoFiles.length > 0) {
           for (const f of videoFiles) {
             const fd2 = new FormData();
             fd2.append('file', f, f.name);
-            await apiUpload(`/products/${created.id}/videos`, fd2, token);
+            await apiUpload(`/products/${productId}/videos`, fd2, token);
           }
         }
       } catch (uploadErr) {
         console.error('Media upload failed', uploadErr);
       }
+
+      await loadProducts();
+      resetMediaFields();
       setEditing(null);
       setForm(initialForm);
       setError('');
@@ -329,9 +353,9 @@ const ProductsPage = () => {
           <div className="filter-grid">
             <div className="filter-group">
               <label className="filter-label">Category</label>
-              <select 
-                className="text-input filter-select" 
-                value={filters.categoryId} 
+              <select
+                className="text-input filter-select"
+                value={filters.categoryId}
                 onChange={(e) => setFilters({...filters, categoryId: e.target.value})}
               >
                 <option value="">All Categories</option>
@@ -342,9 +366,9 @@ const ProductsPage = () => {
             </div>
             <div className="filter-group">
               <label className="filter-label">Brand</label>
-              <select 
-                className="text-input filter-select" 
-                value={filters.brandId} 
+              <select
+                className="text-input filter-select"
+                value={filters.brandId}
                 onChange={(e) => setFilters({...filters, brandId: e.target.value})}
               >
                 <option value="">All Brands</option>
@@ -355,9 +379,9 @@ const ProductsPage = () => {
             </div>
             <div className="filter-group">
               <label className="filter-label">Supplier</label>
-              <select 
-                className="text-input filter-select" 
-                value={filters.supplierId} 
+              <select
+                className="text-input filter-select"
+                value={filters.supplierId}
                 onChange={(e) => setFilters({...filters, supplierId: e.target.value})}
               >
                 <option value="">All Suppliers</option>
@@ -368,9 +392,9 @@ const ProductsPage = () => {
             </div>
             <div className="filter-group">
               <label className="filter-label">Condition</label>
-              <select 
-                className="text-input filter-select" 
-                value={filters.condition} 
+              <select
+                className="text-input filter-select"
+                value={filters.condition}
                 onChange={(e) => setFilters({...filters, condition: e.target.value})}
               >
                 <option value="">All Conditions</option>
@@ -381,59 +405,59 @@ const ProductsPage = () => {
             </div>
             <div className="filter-group">
               <label className="filter-label">Price Range (Min)</label>
-              <input 
-                type="number" 
-                className="text-input" 
-                placeholder="Min price" 
-                value={filters.minPrice} 
+              <input
+                type="number"
+                className="text-input"
+                placeholder="Min price"
+                value={filters.minPrice}
                 onChange={(e) => setFilters({...filters, minPrice: e.target.value})}
               />
             </div>
             <div className="filter-group">
               <label className="filter-label">Price Range (Max)</label>
-              <input 
-                type="number" 
-                className="text-input" 
-                placeholder="Max price" 
-                value={filters.maxPrice} 
+              <input
+                type="number"
+                className="text-input"
+                placeholder="Max price"
+                value={filters.maxPrice}
                 onChange={(e) => setFilters({...filters, maxPrice: e.target.value})}
               />
             </div>
             <div className="filter-group">
               <label className="filter-label">Quantity (Min)</label>
-              <input 
-                type="number" 
-                className="text-input" 
-                placeholder="Min quantity" 
-                value={filters.minQuantity} 
+              <input
+                type="number"
+                className="text-input"
+                placeholder="Min quantity"
+                value={filters.minQuantity}
                 onChange={(e) => setFilters({...filters, minQuantity: e.target.value})}
               />
             </div>
             <div className="filter-group">
               <label className="filter-label">Quantity (Max)</label>
-              <input 
-                type="number" 
-                className="text-input" 
-                placeholder="Max quantity" 
-                value={filters.maxQuantity} 
+              <input
+                type="number"
+                className="text-input"
+                placeholder="Max quantity"
+                value={filters.maxQuantity}
                 onChange={(e) => setFilters({...filters, maxQuantity: e.target.value})}
               />
             </div>
             <div className="filter-group checkbox-group">
               <label className="filter-label">
-                <input 
-                  type="checkbox" 
-                  checked={filters.showLowStock} 
+                <input
+                  type="checkbox"
+                  checked={filters.showLowStock}
                   onChange={(e) => setFilters({...filters, showLowStock: e.target.checked})}
                 />
                 Show Low Stock Only ({"<"} 10 units)
               </label>
             </div>
             <div className="filter-group button-group">
-              <button 
-                className="btn btn-ghost" 
+              <button
+                className="btn btn-ghost"
                 onClick={() => setFilters({
-                  categoryId: '', brandId: '', supplierId: '', condition: '', 
+                  categoryId: '', brandId: '', supplierId: '', condition: '',
                   minPrice: '', maxPrice: '', minQuantity: '', maxQuantity: '', showLowStock: false
                 })}
               >
@@ -446,75 +470,76 @@ const ProductsPage = () => {
           </div>
         </div>
       </section>
-        <section className="panel table-panel">
-          {viewMode === 'list' ? (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Category</th>
-                  <th>Brand</th>
-                  <th>Quantity</th>
-                  <th>Price</th>
-                  <th>Condition</th>
-                  <th>Part</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((product) => (
-                  <tr key={product.id}>
-                    <td>{product.name}</td>
-                    <td>{product.category || 'N/A'}</td>
-                    <td>{product.brand || 'N/A'}</td>
-                    <td>{product.quantity}</td>
-                    <td>TZS {Number(product.price).toLocaleString()}</td>
-                    <td>{product.condition}</td>
-                    <td>{product.serialCode || 'N/A'}</td>
-                    <td>
-                      <button className="btn btn-ghost" onClick={() => handleEdit(product)}>Edit</button>
-                      <button className="btn btn-danger" onClick={() => handleDelete(product.id)}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="product-grid">
+
+      <section className="panel table-panel">
+        {viewMode === 'list' ? (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Brand</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Condition</th>
+                <th>Part</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
               {visibleRows.map((product) => (
-                <article key={product.id} className="product-card">
-                  <div className="product-image">
-                    {product.images && product.images.length > 0 ? (
-                      <img src={product.images[0].url} alt={product.name} />
-                    ) : (
-                      <div className="placeholder-image"></div>
-                    )}
-                  </div>
-                  <div className="product-content">
-                    <div className="product-title">{product.name}</div>
-                    <div className="product-meta">{product.brand || 'Unknown'} • {product.category || 'Unassigned'} • Qty: {product.quantity}</div>
-                    <div className="product-details">
-                      <span  style={{ display: "none" }}>Price: TZS {Number(product.price).toLocaleString()}</span>
-                      <span>Condition: {product.condition}</span>
-                      <span>Part: {product.serialCode || 'N/A'}</span>
-                    </div>
-                  </div>
-                  <div className="action-row">
+                <tr key={product.id}>
+                  <td>{product.name}</td>
+                  <td>{product.category || 'N/A'}</td>
+                  <td>{product.brand || 'N/A'}</td>
+                  <td>{product.quantity}</td>
+                  <td>TZS {Number(product.price).toLocaleString()}</td>
+                  <td>{product.condition}</td>
+                  <td>{product.serialCode || 'N/A'}</td>
+                  <td>
                     <button className="btn btn-ghost" onClick={() => handleEdit(product)}>Edit</button>
                     <button className="btn btn-danger" onClick={() => handleDelete(product.id)}>Delete</button>
-                  </div>
-                </article>
+                  </td>
+                </tr>
               ))}
-            </div>
-          )}
-          {filteredProducts.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '14px' }}>
-              <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.max(1, p - 1))} disabled={productPage === 1}>Prev</button>
-              <span style={{ fontSize: 12, color: '#475569' }}>Page {productPage}/{productTotalPages}</span>
-              <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.min(productTotalPages, p + 1))} disabled={productPage >= productTotalPages}>Next</button>
-            </div>
-          )}
-        </section>
+            </tbody>
+          </table>
+        ) : (
+          <div className="product-grid">
+            {visibleRows.map((product) => (
+              <article key={product.id} className="product-card">
+                <div className="product-image">
+                  {product.images && product.images.length > 0 ? (
+                    <img src={product.images[0].url} alt={product.name} />
+                  ) : (
+                    <div className="placeholder-image"></div>
+                  )}
+                </div>
+                <div className="product-content">
+                  <div className="product-title">{product.name}</div>
+                  <div className="product-meta">{product.brand || 'Unknown'} • {product.category || 'Unassigned'} • Qty: {product.quantity}</div>
+                  <div className="product-details">
+                    <span style={{ display: 'none' }}>Price: TZS {Number(product.price).toLocaleString()}</span>
+                    <span>Condition: {product.condition}</span>
+                    <span>Part: {product.serialCode || 'N/A'}</span>
+                  </div>
+                </div>
+                <div className="action-row">
+                  <button className="btn btn-ghost" onClick={() => handleEdit(product)}>Edit</button>
+                  <button className="btn btn-danger" onClick={() => handleDelete(product.id)}>Delete</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        {filteredProducts.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', paddingTop: '14px' }}>
+            <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.max(1, p - 1))} disabled={productPage === 1}>Prev</button>
+            <span style={{ fontSize: 12, color: '#475569' }}>Page {productPage}/{productTotalPages}</span>
+            <button type="button" className="btn btn-light" onClick={() => setProductPage((p) => Math.min(productTotalPages, p + 1))} disabled={productPage >= productTotalPages}>Next</button>
+          </div>
+        )}
+      </section>
 
       <Modal
         isOpen={modal.isOpen}
@@ -524,6 +549,7 @@ const ProductsPage = () => {
           setEditing(null);
           setForm(initialForm);
           setError('');
+          resetMediaFields();
         }}
         size="large"
       >
@@ -559,13 +585,13 @@ const ProductsPage = () => {
               ))}
             </select>
           </div>
-          <div className="field-group" style={{ display: "none" }} >
+          <div className="field-group" style={{ display: 'none' }}>
             <label className="field-label">Quantity</label>
-            <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required disabled hidden/>
+            <input className="text-input" type="number" name="quantity" min="0" value={form.quantity} onChange={handleChange} required disabled hidden />
           </div>
-          <div className="field-group" style={{ display: "none" }} >
+          <div className="field-group" style={{ display: 'none' }}>
             <label className="field-label">Price</label>
-            <input className="text-input" type="number" name="price" min="0" value={form.price} onChange={handleChange} required disabled hidden/>
+            <input className="text-input" type="number" name="price" min="0" value={form.price} onChange={handleChange} required disabled hidden />
           </div>
           <div className="field-group">
             <label className="field-label">Condition</label>
@@ -579,14 +605,41 @@ const ProductsPage = () => {
             <label className="field-label">Part Number</label>
             <input className="text-input" name="serialCode" value={form.serialCode} onChange={handleChange} />
           </div>
-          <div className="field-group">
-            <label className="field-label">Images</label>
+
+          <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+            <label className="field-label">Current Images</label>
+            {existingImages.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
+                {existingImages.map((img) => (
+                  <div key={img.id || img.fileName || img.url} style={{ width: '88px', textAlign: 'center' }}>
+                    <img src={img.url} alt="Product" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                    <div style={{ fontSize: '11px', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{img.fileName || 'image'}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: '#64748b', fontSize: '12px', marginBottom: '8px' }}>No images uploaded yet.</div>
+            )}
             <input className="text-input" type="file" accept="image/*" multiple onChange={handleImageChange} />
           </div>
-          <div className="field-group">
-            <label className="field-label">Videos</label>
+
+          <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+            <label className="field-label">Current Videos</label>
+            {existingVideos.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
+                {existingVideos.map((video) => (
+                  <div key={video.id || video.fileName || video.url} style={{ width: '120px', textAlign: 'center' }}>
+                    <video src={video.url} controls style={{ width: '110px', height: '80px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#0f172a' }} />
+                    <div style={{ fontSize: '11px', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{video.fileName || 'video'}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: '#64748b', fontSize: '12px', marginBottom: '8px' }}>No videos uploaded yet.</div>
+            )}
             <input className="text-input" type="file" accept="video/*" multiple onChange={handleVideoChange} />
           </div>
+
           <div className="form-actions">
             <button type="submit" className="btn btn-primary">{editing ? 'Save Changes' : 'Create Product'}</button>
             <button
@@ -597,6 +650,7 @@ const ProductsPage = () => {
                 setEditing(null);
                 setForm(initialForm);
                 setError('');
+                resetMediaFields();
               }}
             >
               Cancel
