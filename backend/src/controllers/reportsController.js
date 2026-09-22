@@ -26,6 +26,8 @@ const normalizeAllocations = (rawValue) => {
   return [];
 };
 
+const getProductCodeValue = (product) => product?.serialCode || product?.serial_code || product?.sku || '-';
+
 // Dashboard overview report
 const getReports = async (req, res) => {
   const totalProducts = await Product.count();
@@ -108,7 +110,7 @@ const generateStockValuation = async (req, res) => {
   try {
     const batches = await StockBatch.findAll({
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'sku'] },
+        { model: Product, as: 'product', attributes: ['id', 'name', 'sku', 'serialCode'] },
         { model: Location, as: 'location', attributes: ['id', 'name'] },
       ],
       where: { quantity_remaining: { [Op.gt]: 0 } },
@@ -117,7 +119,8 @@ const generateStockValuation = async (req, res) => {
     const valuation = batches.map(b => ({
       product_id: b.product_id,
       product_name: b.product?.name || 'Unknown',
-      sku: b.product?.sku || '-',
+      sku: getProductCodeValue(b.product),
+      serial_code: getProductCodeValue(b.product),
       location: b.location?.name || 'Unknown',
       batch_number: b.batch_number,
       quantity: b.quantity_remaining,
@@ -163,7 +166,7 @@ const generateFIFOCostReport = async (req, res) => {
     const movements = await StockMovement.findAll({
       where: { type: 'out' },
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'sku'] },
+        { model: Product, as: 'product', attributes: ['id', 'name', 'sku', 'serialCode'] },
         { model: User, as: 'issuer', attributes: ['id', 'fullName'] },
       ],
       order: [['createdAt', 'DESC']],
@@ -178,10 +181,13 @@ const generateFIFOCostReport = async (req, res) => {
         total: safeNumber(a.total_cost ?? a.totalCost ?? 0),
       }));
 
+      const productCode = getProductCodeValue(m.product);
+
       return {
         movement_id: m.id,
         product_name: m.product?.name || 'Unknown',
-        sku: m.product?.sku || '-',
+        sku: productCode,
+        serial_code: productCode,
         quantity_issued: safeNumber(m.quantity),
         issued_by: m.issuer?.fullName || 'System',
         issued_at: m.createdAt,
@@ -223,7 +229,7 @@ const generateLowStockAlert = async (req, res) => {
     const { reorder_level = 5 } = req.query;
 
     const products = await Product.findAll({
-      attributes: ['id', 'name', 'sku', 'quantity'],
+      attributes: ['id', 'name', 'sku', 'serialCode', 'quantity'],
       where: { quantity: { [Op.lte]: reorder_level } },
     });
 
@@ -234,11 +240,13 @@ const generateLowStockAlert = async (req, res) => {
         });
 
         const totalRemaining = batches.reduce((sum, b) => sum + b.quantity_remaining, 0);
+        const productCode = getProductCodeValue(product);
 
         return {
           product_id: product.id,
           product_name: product.name,
-          sku: product.sku,
+          sku: productCode,
+          serial_code: productCode,
           recorded_quantity: product.quantity,
           actual_remaining: totalRemaining,
           reorder_level: parseInt(reorder_level),
@@ -283,7 +291,7 @@ const generateMovementsSummary = async (req, res) => {
     const movements = await StockMovement.findAll({
       where,
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'sku'] },
+        { model: Product, as: 'product', attributes: ['id', 'name', 'sku', 'serialCode'] },
         { model: Location, as: 'from_location', attributes: ['id', 'name'] },
         { model: Location, as: 'to_location', attributes: ['id', 'name'] },
         { model: User, as: 'issuer', attributes: ['id', 'fullName'] },
@@ -311,20 +319,24 @@ const generateMovementsSummary = async (req, res) => {
       summary_by_product[prod_key].total_value += parseFloat(m.total_cost || 0);
     });
 
-    const data = movements.map(m => ({
-      movement_id: m.id,
-      type: m.type,
-      product: m.product?.name || 'Unknown',
-      sku: m.product?.sku || '-',
-      quantity: m.quantity,
-      from_location: m.from_location?.name || '-',
-      to_location: m.to_location?.name || '-',
-      value: parseFloat(m.total_cost || 0),
-      purpose: m.purpose,
-      reference: m.reference,
-      performed_by: m.issuer?.fullName || 'System',
-      timestamp: m.createdAt,
-    }));
+    const data = movements.map(m => {
+      const productCode = getProductCodeValue(m.product);
+      return {
+        movement_id: m.id,
+        type: m.type,
+        product: m.product?.name || 'Unknown',
+        sku: productCode,
+        serial_code: productCode,
+        quantity: m.quantity,
+        from_location: m.from_location?.name || '-',
+        to_location: m.to_location?.name || '-',
+        value: parseFloat(m.total_cost || 0),
+        purpose: m.purpose,
+        reference: m.reference,
+        performed_by: m.issuer?.fullName || 'System',
+        timestamp: m.createdAt,
+      };
+    });
 
     await createLog(req.user?.id || null, 'Report', 'generate', null, 'Generated movements summary report', { type: 'movements_summary' }, req.ip);
 

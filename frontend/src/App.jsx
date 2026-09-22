@@ -143,13 +143,13 @@ const DashboardPage = () => {
 
       <section className="grid two-col">
         <article className="panel large-panel">
-          <div className="panel-header">
+          <div className="panel-header" style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px solid rgba(148, 163, 184, 0.18)' }}>
             <div>
               <div className="panel-label">Inventory Health</div>
               <h3 className="panel-title">Stock Distribution</h3>
             </div>
           </div>
-          <div className="chart-area">
+          <div className="chart-area" style={{ marginTop: 12 }}>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: 12 }}>
               <div style={{ width: 42, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: 11, color: '#64748b', paddingBottom: 18 }}>
                 {[4, 3, 2, 1, 0].map((tick) => (
@@ -220,7 +220,7 @@ const DashboardPage = () => {
         <div className="panel-header">
           <div>
             <div className="panel-label">Inventory Overview</div>
-            <h3 className="panel-title">Products Liste</h3>
+            <h3 className="panel-title">Products List</h3>
           </div>
         </div>
         <div style={{ overflowX: 'auto' }}>
@@ -288,9 +288,7 @@ const DashboardPage = () => {
 };
 
 // Sidebar Component with Lucide Icons
-const Sidebar = ({ user, onLogout }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-
+const Sidebar = ({ user, onLogout, sidebarOpen, setSidebarOpen }) => {
   const navigationGroups = [
     {
       label: 'Main',
@@ -345,7 +343,8 @@ const Sidebar = ({ user, onLogout }) => {
   ];
 
   return (
-    <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
+    <>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
       <div className="sidebar-header">
         <div className="brand">
           <div className="brand-icon">
@@ -353,8 +352,8 @@ const Sidebar = ({ user, onLogout }) => {
           </div>
           {sidebarOpen && (
             <div>
-              <div className="brand-title">StockFlow</div>
-              <div className="brand-subtitle">Inventory OS</div>
+              {/* <div className="brand-title">StockFlow</div>
+              <div className="brand-subtitle">Inventory OS</div> */}
             </div>
           )}
         </div>
@@ -377,6 +376,12 @@ const Sidebar = ({ user, onLogout }) => {
                     className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
                     end={item.path === '/'}
                     title={item.label}
+                    onClick={() => {
+                      // Close sidebar on mobile after clicking a link
+                      if (window.innerWidth <= 1024) {
+                        setSidebarOpen(false);
+                      }
+                    }}
                   >
                     <IconComponent size={20} className="nav-icon-svg" />
                     {sidebarOpen && <span>{item.label}</span>}
@@ -406,17 +411,38 @@ const Sidebar = ({ user, onLogout }) => {
           <LogOut size={18} />
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };
 
 // Topbar Component
-const Topbar = ({ pageTitle, pageSubtitle, user, theme, language, onThemeToggle, onLanguageChange, searchQuery, onSearchChange, notificationCount }) => {
+const Topbar = ({ pageTitle, pageSubtitle, user, theme, language, onThemeToggle, onLanguageChange, searchQuery, onSearchChange, notificationCount, onMobileMenuToggle }) => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
+  const handleProfileOption = (action) => {
+    setProfileMenuOpen(false);
+    if (action === 'profile') {
+      navigate('/users');
+    } else if (action === 'settings') {
+      navigate('/settings');
+    } else if (action === 'logout') {
+      logout();
+    }
+  };
 
   return (
     <header className="topbar">
       <div className="topbar-left">
+        <button 
+          className="mobile-menu-toggle" 
+          onClick={onMobileMenuToggle}
+          title="Toggle menu"
+        >
+          <Menu size={20} />
+        </button>
         <div>
           <div className="page-kicker">Stock Management</div>
           <h1 className="page-title">{pageTitle || 'Dashboard'}</h1>
@@ -456,11 +482,65 @@ const Topbar = ({ pageTitle, pageSubtitle, user, theme, language, onThemeToggle,
           <Settings size={18} />
         </button>
 
-        <button type="button" className="profile-button" onClick={() => navigate('/users')}>
-          <User size={18} />
-          <span>{user?.fullName?.split(' ')[0] || 'Me'}</span>
-          <ChevronDown size={14} />
-        </button>
+        <div className="profile-menu-wrapper">
+          <button 
+            type="button" 
+            className={`profile-button ${profileMenuOpen ? 'active' : ''}`}
+            onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+            title="Profile menu"
+          >
+            <User size={18} />
+            <span>{user?.fullName?.split(' ')[0] || 'Me'}</span>
+            <ChevronDown size={14} style={{ transform: profileMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }} />
+          </button>
+
+          {profileMenuOpen && (
+            <div className="profile-menu">
+              <div className="profile-menu-header">
+                <div className="profile-avatar">{user?.fullName?.split(' ').map((n) => n[0]).join('') || 'U'}</div>
+                <div className="profile-info">
+                  <div className="profile-name">{user?.fullName || 'User'}</div>
+                  <div className="profile-role">{user?.role || 'Customer'}</div>
+                </div>
+              </div>
+
+              <div className="profile-menu-divider"></div>
+
+              <button 
+                className="profile-menu-item"
+                onClick={() => handleProfileOption('profile')}
+              >
+                <User size={16} />
+                <span>Profile</span>
+              </button>
+
+              <button 
+                className="profile-menu-item"
+                onClick={() => handleProfileOption('settings')}
+              >
+                <Settings size={16} />
+                <span>Settings</span>
+              </button>
+
+              <div className="profile-menu-divider"></div>
+
+              <button 
+                className="profile-menu-item logout"
+                onClick={() => handleProfileOption('logout')}
+              >
+                <LogOut size={16} />
+                <span>Logout</span>
+              </button>
+            </div>
+          )}
+
+          {profileMenuOpen && (
+            <div 
+              className="profile-menu-backdrop"
+              onClick={() => setProfileMenuOpen(false)}
+            />
+          )}
+        </div>
       </div>
     </header>
   );
@@ -469,10 +549,11 @@ const Topbar = ({ pageTitle, pageSubtitle, user, theme, language, onThemeToggle,
 // Layout wrapper for protected pages
 const MainLayout = ({ children, pageTitle, pageSubtitle, theme, language, onThemeToggle, onLanguageChange, searchQuery, onSearchChange, notificationCount }) => {
   const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
     <div className={`app-shell ${theme}`}>
-      <Sidebar user={user} onLogout={logout} />
+      <Sidebar user={user} onLogout={logout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
       <main className="main-content">
         <Topbar
           pageTitle={pageTitle}
@@ -485,6 +566,7 @@ const MainLayout = ({ children, pageTitle, pageSubtitle, theme, language, onThem
           searchQuery={searchQuery}
           onSearchChange={onSearchChange}
           notificationCount={notificationCount}
+          onMobileMenuToggle={() => setSidebarOpen((prev) => !prev)}
         />
         <div className="page-body">{children}</div>
       </main>

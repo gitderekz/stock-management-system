@@ -74,8 +74,23 @@ const getNestedValue = (row, key) => {
   if (!row || !key) return '—';
 
   if (key.includes('.')) {
-    const value = key.split('.').reduce((acc, segment) => acc?.[segment], row);
-    if (value !== undefined && value !== null && value !== '') return value;
+    let current = row;
+    for (const segment of key.split('.')) {
+      if (!current || typeof current !== 'object') return '—';
+      const normalizedSegment = normalizeKey(segment);
+      const exactMatch = Object.keys(current).find((entry) => normalizeKey(entry) === normalizedSegment);
+      const value = exactMatch ? current[exactMatch] : current[segment];
+      if (value === undefined || value === null || value === '') {
+        const partialMatch = Object.keys(current).find((entry) =>
+          normalizeKey(entry).includes(normalizedSegment) || normalizedSegment.includes(normalizeKey(entry))
+        );
+        if (!partialMatch) return '—';
+        current = current[partialMatch];
+      } else {
+        current = value;
+      }
+    }
+    return current !== undefined && current !== null && current !== '' ? current : '—';
   }
 
   if (Object.prototype.hasOwnProperty.call(row, key)) return row[key];
@@ -91,54 +106,27 @@ const getNestedValue = (row, key) => {
   return '—';
 };
 
-const formatCellValue = (value) => {
-  if (value === null || value === undefined || value === '') return '—';
-  if (typeof value === 'object') {
-    if (Array.isArray(value)) return value.length ? value.map((item) => formatCellValue(item)).join(', ') : '—';
-    if (value.name) return value.name;
-    if (value.fullName) return value.fullName;
-    if (value.label) return value.label;
-    if (value.po_number) return value.po_number;
-    if (value.email) return value.email;
-    return JSON.stringify(value);
+const firstDefinedValue = (...values) => {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '' && value !== '—') return value;
   }
-  if (typeof value === 'number') {
-    if (Number.isFinite(value)) return value.toLocaleString();
-    return String(value);
-  }
-  return String(value);
+  return '—';
 };
 
-const getReportRowsForTab = (activeReport, payload) => {
-  switch (activeReport) {
-    case 'overview':
-      return getTableRows(payload?.data || payload || [], ['inventory', 'movements', 'purchases', 'stockSegments']);
-    case 'valuation':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'fifo-cost':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'low-stock':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'movements':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'audit':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'purchase-orders':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'stock-in':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'stock-out':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'transfers':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'damaged':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    case 'returns':
-      return getTableRows(payload?.data || payload || [], ['data']);
-    default:
-      return getTableRows(payload || []);
-  }
-};
+const getSkuValue = (row) => firstDefinedValue(
+  getNestedValue(row, 'product.serialCode'),
+  getNestedValue(row, 'product.serial_code'),
+  getNestedValue(row, 'serialCode'),
+  getNestedValue(row, 'serial_code'),
+  getNestedValue(row, 'product.sku'),
+  getNestedValue(row, 'sku'),
+  getNestedValue(row, 'part_number'),
+  getNestedValue(row, 'partNumber'),
+  getNestedValue(row, 'product.part_number'),
+  getNestedValue(row, 'product.partNumber')
+);
+
+const normalizeSkuRows = (rows = []) => rows.map((row) => ({ ...row, sku: getSkuValue(row) }));
 
 const reportTableStyle = {
   borderCollapse: 'separate',
@@ -201,6 +189,24 @@ const reportLabels = {
   transfers: 'Transfers',
   damaged: 'Damaged',
   returns: 'Returns',
+};
+
+const formatCellValue = (value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) return value.length ? value.map((item) => formatCellValue(item)).join(', ') : '—';
+    if (value.name) return value.name;
+    if (value.fullName) return value.fullName;
+    if (value.label) return value.label;
+    if (value.po_number) return value.po_number;
+    if (value.email) return value.email;
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) return value.toLocaleString();
+    return String(value);
+  }
+  return String(value);
 };
 
 const usePaginatedRows = (rows, pageSize = 8) => {
@@ -398,10 +404,13 @@ const ReportsPage = () => {
       </div>
 
       <div className="panel" style={{ gridColumn: '1 / -1' }}>
-        <div style={{ marginBottom: '12px' }}>
-          <h4 style={{ margin: 0 }}>Inventory Health - Stock Distribution</h4>
+        <div className="panel-header" style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid rgba(148, 163, 184, 0.18)' }}>
+          <div>
+            <div className="panel-label">Inventory Health</div>
+            <h3 className="panel-title" style={{ margin: 0, fontSize: '1rem' }}>Stock Distribution</h3>
+          </div>
         </div>
-        <div className="chart-area" style={{ position: 'static' }}>
+        <div className="chart-area" style={{ position: 'static', marginTop: 8 }}>
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 12 }}>
             <div style={{ width: 48, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: 11, color: '#64748b', paddingBottom: 18 }}>
               {[4, 3, 2, 1, 0].map((tick) => (
@@ -502,10 +511,10 @@ const ReportsPage = () => {
   );
 
   const ValuationReport = () => {
-    const rows = getTableRows(data?.data || data?.valuations || []);
+    const rows = normalizeSkuRows(getTableRows(data?.data || data?.valuations || []));
     const columns = [
       { key: 'product_name', label: 'Product' },
-      { key: 'sku', label: 'SKU' },
+      { key: 'sku', label: 'SKU / Part Number' },
       { key: 'location', label: 'Location' },
       { key: 'quantity', label: 'Qty' },
       { key: 'unit_cost', label: 'Unit Cost' },
@@ -520,10 +529,10 @@ const ReportsPage = () => {
   };
 
   const LowStockReport = () => {
-    const rows = getTableRows(data?.data || data?.lowStockProducts || []);
+    const rows = normalizeSkuRows(getTableRows(data?.data || data?.lowStockProducts || []));
     const columns = [
       { key: 'product_name', label: 'Product' },
-      { key: 'sku', label: 'SKU' },
+      { key: 'sku', label: 'SKU / Part Number' },
       { key: 'recorded_quantity', label: 'Current Qty' },
       { key: 'reorder_level', label: 'Reorder' },
       { key: 'actual_remaining', label: 'Actual Remaining' },
@@ -557,10 +566,10 @@ const ReportsPage = () => {
   };
 
   const FIFOCostReport = () => {
-    const rows = getTableRows(data?.data || []);
+    const rows = normalizeSkuRows(getTableRows(data?.data || []));
     const columns = [
       { key: 'product_name', label: 'Product' },
-      { key: 'sku', label: 'SKU' },
+      { key: 'sku', label: 'SKU / Part Number' },
       { key: 'quantity_issued', label: 'Qty Issued' },
       { key: 'unit_cost', label: 'Unit Cost' },
       { key: 'total_cost', label: 'COGS' },
