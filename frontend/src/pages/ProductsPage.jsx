@@ -48,6 +48,8 @@ const ProductsPage = () => {
   });
 
   const [selectedProducts, setSelectedProducts] = useState(new Set());
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
   const loadProducts = async () => {
     try {
@@ -298,6 +300,52 @@ const ProductsPage = () => {
     }
   };
 
+  const getProductMedia = (product) => {
+    const media = [];
+
+    if (product.imageUrl) {
+      media.push({ type: 'image', url: product.imageUrl, label: product.name || 'Product image' });
+    }
+
+    if (product.videoUrl) {
+      media.push({ type: 'video', url: product.videoUrl, label: product.name || 'Product video' });
+    }
+
+    const imageList = Array.isArray(product.images) ? product.images : [];
+    imageList.forEach((item) => {
+      if (item?.url) media.push({ type: 'image', url: item.url, label: item.fileName || product.name || 'Product image' });
+    });
+
+    const videoList = Array.isArray(product.videos) ? product.videos : [];
+    videoList.forEach((item) => {
+      if (item?.url) media.push({ type: 'video', url: item.url, label: item.fileName || product.name || 'Product video' });
+    });
+
+    return media.filter((item, index, list) => {
+      const duplicateIndex = list.findIndex((entry) => entry.type === item.type && entry.url === item.url);
+      return duplicateIndex === index;
+    });
+  };
+
+  const openProductDetails = (product) => {
+    setSelectedProduct(product);
+    setActiveMediaIndex(0);
+  };
+
+  const closeProductDetails = () => {
+    setSelectedProduct(null);
+    setActiveMediaIndex(0);
+  };
+
+  const goToMedia = (direction) => {
+    if (!selectedProduct) return;
+    const media = getProductMedia(selectedProduct);
+    if (!media.length) return;
+    setActiveMediaIndex((prev) => (prev + direction + media.length) % media.length);
+  };
+
+  const activeMedia = selectedProduct ? getProductMedia(selectedProduct)[activeMediaIndex] : null;
+
   return (
     <div className="content-space">
       <section className="panel panel-dashboard-header">
@@ -507,7 +555,7 @@ const ProductsPage = () => {
         ) : (
           <div className="product-grid">
             {visibleRows.map((product) => (
-              <article key={product.id} className="product-card">
+              <article key={product.id} className="product-card" onClick={() => openProductDetails(product)} style={{ cursor: 'pointer' }}>
                 <div className="product-image">
                   {product.images && product.images.length > 0 ? (
                     <img src={product.images[0].url} alt={product.name} />
@@ -524,7 +572,7 @@ const ProductsPage = () => {
                     <span>Part: {product.serialCode || 'N/A'}</span>
                   </div>
                 </div>
-                <div className="action-row">
+                <div className="action-row" onClick={(e) => e.stopPropagation()}>
                   <button className="btn btn-ghost" onClick={() => handleEdit(product)}>Edit</button>
                   <button className="btn btn-danger" onClick={() => handleDelete(product.id)}>Delete</button>
                 </div>
@@ -658,6 +706,91 @@ const ProductsPage = () => {
           </div>
         </form>
       </Modal>
+
+      {selectedProduct && (
+        <div className="modal-overlay" onClick={closeProductDetails}>
+          <div className="modal-content modal-large" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">{selectedProduct.name}</h2>
+              <button className="modal-close" type="button" onClick={closeProductDetails}>×</button>
+            </div>
+
+            <div className="modal-body">
+              <div className="product-detail-layout">
+                <div className="product-detail-media">
+                  {activeMedia ? (
+                    <div className="product-detail-viewport">
+                      {getProductMedia(selectedProduct).length > 1 && (
+                        <>
+                          <button type="button" className="media-nav media-nav-left" onClick={() => goToMedia(-1)} aria-label="Previous media">‹</button>
+                          <button type="button" className="media-nav media-nav-right" onClick={() => goToMedia(1)} aria-label="Next media">›</button>
+                        </>
+                      )}
+
+                      {activeMedia.type === 'image' ? (
+                        <img src={activeMedia.url} alt={activeMedia.label} className="product-detail-image" />
+                      ) : (
+                        <video src={activeMedia.url} controls className="product-detail-video" />
+                      )}
+
+                      {getProductMedia(selectedProduct).length > 1 && (
+                        <div className="media-indicator">
+                          {activeMediaIndex + 1} / {getProductMedia(selectedProduct).length}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="placeholder-image product-detail-empty" />
+                  )}
+                </div>
+
+                <div className="product-detail-info">
+                  <div className="detail-grid">
+                    <div className="detail-item">
+                      <span className="label">Category</span>
+                      <strong>{selectedProduct.category || 'N/A'}</strong>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Brand</span>
+                      <strong>{selectedProduct.brand || 'N/A'}</strong>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Supplier</span>
+                      <strong>{selectedProduct.supplier || 'N/A'}</strong>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Condition</span>
+                      <strong>{selectedProduct.condition || 'N/A'}</strong>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Quantity</span>
+                      <strong>{selectedProduct.quantity ?? 0}</strong>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Price</span>
+                      <strong>TZS {Number(selectedProduct.price || 0).toLocaleString()}</strong>
+                    </div>
+                    <div className="detail-item full-width">
+                      <span className="label">SKU / Part Number</span>
+                      <strong>{selectedProduct.serialCode || 'N/A'}</strong>
+                    </div>
+                    <div className="detail-item full-width">
+                      <span className="label">Status</span>
+                      <strong>{selectedProduct.status || 'active'}</strong>
+                    </div>
+                    {selectedProduct.description && (
+                      <div className="detail-item full-width">
+                        <span className="label">Description</span>
+                        <strong>{selectedProduct.description}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
