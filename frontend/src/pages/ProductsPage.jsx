@@ -264,13 +264,148 @@ const ProductsPage = () => {
     setVideoFiles(files);
   };
 
-  const handleExport = (type) => {
-    if (type === 'csv') {
-      exportToCSV(filteredProducts);
-    } else if (type === 'xls') {
-      exportToExcel(filteredProducts);
-    } else if (type === 'pdf') {
-      exportToPDF(filteredProducts);
+  const handleExport = async (type) => {
+    try {
+      const batchResponse = await apiGet('/stock/batches', token).catch(() => ({ data: [] }));
+      const batches = Array.isArray(batchResponse?.data) ? batchResponse.data : Array.isArray(batchResponse) ? batchResponse : [];
+
+      const batchesByProductKey = new Map();
+      batches.forEach((batch) => {
+        const batchProductId = batch.product_id ?? batch.productId ?? null;
+        const productNameKey = (batch.product || batch.product_name || '').toLowerCase().trim();
+
+        if (batchProductId !== null) {
+          const key = String(batchProductId);
+          const current = batchesByProductKey.get(key) || [];
+          current.push(batch);
+          batchesByProductKey.set(key, current);
+        }
+
+        if (productNameKey) {
+          const key = `name:${productNameKey}`;
+          const current = batchesByProductKey.get(key) || [];
+          current.push(batch);
+          batchesByProductKey.set(key, current);
+        }
+      });
+
+      const rows = filteredProducts.flatMap((product) => {
+        const productId = product.id ?? product.productId ?? null;
+        const nameKey = (product.name || '').toLowerCase().trim();
+        const productBatches = [];
+
+        if (productId !== null) {
+          productBatches.push(...(batchesByProductKey.get(String(productId)) || []));
+        }
+
+        if (nameKey) {
+          productBatches.push(...(batchesByProductKey.get(`name:${nameKey}`) || []));
+        }
+
+        const uniqueBatches = productBatches.filter((batch, index, list) => {
+          const batchId = batch.id ?? batch.batch_id ?? batch.batch_number ?? batch.batchNumber ?? `${batch.batch_number || 'x'}-${batch.product_id ?? batch.productId ?? product.id ?? index}`;
+          return list.findIndex((item) => {
+            const otherId = item.id ?? item.batch_id ?? item.batch_number ?? item.batchNumber ?? `${item.batch_number || 'x'}-${item.product_id ?? item.productId ?? product.id ?? index}`;
+            return otherId === batchId;
+          }) === index;
+        });
+
+        const baseProductRecord = {
+          id: product.id ?? '',
+          name: product.name || '',
+          description: product.description ?? '',
+          condition: product.condition ?? '',
+          model: product.model ?? '',
+          version: product.version ?? '',
+          serialCode: product.serialCode ?? '',
+          status: product.status ?? '',
+          category: product.category ?? '',
+          brand: product.brand ?? '',
+          supplier: product.supplier ?? '',
+          attachmentUrl: product.attachmentUrl ?? '',
+          images: Array.isArray(product.images) ? product.images.map((img) => img?.url || img?.filePath || img?.fileName || '').filter(Boolean) : '',
+          videos: Array.isArray(product.videos) ? product.videos.map((vid) => vid?.url || vid?.filePath || vid?.fileName || '').filter(Boolean) : '',
+          imageUrl: product.imageUrl ?? '',
+          videoUrl: product.videoUrl ?? '',
+          createdAt: product.createdAt ?? '',
+          updatedAt: product.updatedAt ?? '',
+        };
+
+        const rowsForProduct = uniqueBatches.length > 0
+          ? uniqueBatches
+              .filter((batch) => Number(batch.quantity_remaining ?? batch.quantity ?? 0) > 0)
+              .map((batch) => {
+                const row = {
+                  id: product.id ?? '',
+                  name: product.name || '',
+                  description: product.description ?? '',
+                  batch: batch.batch_number || batch.batchNumber || batch.batch || 'N/A',
+                  'buying price': Number(batch.unit_cost ?? batch.unitCost ?? batch.buying_price ?? batch.buyingPrice ?? product.price ?? 0),
+                  'selling price': Number(batch.unit_selling_price ?? batch.unitSellingPrice ?? batch.selling_price ?? batch.sellingPrice ?? product.price ?? 0),
+                  quantity: Number(batch.quantity_remaining ?? batch.quantity ?? 0),
+                  condition: product.condition ?? '',
+                  model: product.model ?? '',
+                  version: product.version ?? '',
+                  serialCode: product.serialCode ?? '',
+                  status: product.status ?? '',
+                  category: product.category ?? '',
+                  brand: product.brand ?? '',
+                  supplier: product.supplier ?? '',
+                  attachmentUrl: product.attachmentUrl ?? '',
+                  images: Array.isArray(product.images) ? product.images.map((img) => img?.url || img?.filePath || img?.fileName || '').filter(Boolean) : '',
+                  videos: Array.isArray(product.videos) ? product.videos.map((vid) => vid?.url || vid?.filePath || vid?.fileName || '').filter(Boolean) : '',
+                  imageUrl: product.imageUrl ?? '',
+                  videoUrl: product.videoUrl ?? '',
+                  createdAt: product.createdAt ?? '',
+                  updatedAt: product.updatedAt ?? '',
+                };
+
+                return row;
+              })
+          : [{
+              id: product.id ?? '',
+              name: product.name || '',
+              description: product.description ?? '',
+              batch: 'N/A',
+              'buying price': Number(product.price || 0),
+              'selling price': Number(product.price || 0),
+              quantity: Number(product.quantity || 0),
+              condition: product.condition ?? '',
+              model: product.model ?? '',
+              version: product.version ?? '',
+              serialCode: product.serialCode ?? '',
+              status: product.status ?? '',
+              category: product.category ?? '',
+              brand: product.brand ?? '',
+              supplier: product.supplier ?? '',
+              attachmentUrl: product.attachmentUrl ?? '',
+              images: Array.isArray(product.images) ? product.images.map((img) => img?.url || img?.filePath || img?.fileName || '').filter(Boolean) : '',
+              videos: Array.isArray(product.videos) ? product.videos.map((vid) => vid?.url || vid?.filePath || vid?.fileName || '').filter(Boolean) : '',
+              imageUrl: product.imageUrl ?? '',
+              videoUrl: product.videoUrl ?? '',
+              createdAt: product.createdAt ?? '',
+              updatedAt: product.updatedAt ?? '',
+            }];
+
+        return rowsForProduct;
+      });
+
+      const exportData = rows.length ? rows : [];
+      if (!exportData.length) {
+        alert('No data to export');
+        return;
+      }
+
+      if (type === 'csv') {
+        exportToCSV(exportData, 'products-batch-export.csv');
+      } else if (type === 'xls') {
+        exportToExcel(exportData, 'products-batch-export.xlsx');
+      } else if (type === 'pdf') {
+        exportToPDF(exportData, 'products-batch-export.pdf');
+      }
+    } catch (err) {
+      console.error('Product export failed:', err);
+      alert('Product export failed.');
     }
   };
 
