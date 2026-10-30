@@ -418,18 +418,56 @@ const ProductsPage = () => {
         ? await importFromCSV(file)
         : await importFromExcel(file);
 
+      if (!Array.isArray(data) || data.length === 0) {
+        setError('No valid product rows found in the selected file.');
+        return;
+      }
+
+      const preparedRows = data.map((row) => {
+        const categoryId = row.categoryId ?? row.category_id ?? row.categoryIdNumber ?? '';
+        const brandId = row.brandId ?? row.brand_id ?? row.brandIdNumber ?? '';
+        const supplierId = row.supplierId ?? row.supplier_id ?? row.supplierIdNumber ?? '';
+
+        const payload = {
+          name: String(row.name || '').trim(),
+          categoryId: categoryId === '' || categoryId === null || categoryId === undefined ? undefined : Number(categoryId),
+          brandId: brandId === '' || brandId === null || brandId === undefined ? undefined : Number(brandId),
+          supplierId: supplierId === '' || supplierId === null || supplierId === undefined ? undefined : Number(supplierId),
+          quantity: Number(row.quantity ?? 0),
+          price: Number(row.price ?? 0),
+          condition: String(row.condition || 'new').trim() || 'new',
+          serialCode: String(row.serialCode || '').trim(),
+        };
+
+        if (!payload.name) {
+          throw new Error('One or more rows are missing a product name.');
+        }
+
+        if (payload.categoryId === undefined && row.category) {
+          payload.category = String(row.category).trim();
+        }
+        if (payload.brandId === undefined && row.brand) {
+          payload.brand = String(row.brand).trim();
+        }
+        if (payload.supplierId === undefined && row.supplier) {
+          payload.supplier = String(row.supplier).trim();
+        }
+
+        return payload;
+      });
+
       const createdProducts = await Promise.all(
-        data.map(async (row) => {
+        preparedRows.map(async (row) => {
           const response = await apiPost('/products', row, token);
           return normalizeResponseData(response) || row;
         })
       );
 
       setProducts((prev) => [...createdProducts, ...prev]);
-      setMessage('Import completed successfully.');
+      setMessage(`Import completed successfully. ${createdProducts.length} product(s) added.`);
       setError('');
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Product import failed.');
     } finally {
       event.target.value = '';
     }
